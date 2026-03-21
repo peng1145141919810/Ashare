@@ -11,6 +11,11 @@ from .market_pipeline import run_market_pipeline
 from .orchestrator_v6 import run_v6_cycle
 from .portfolio_recommendation import build_portfolio_recommendation
 
+
+def _now_text() -> str:
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
 def _check_gpu_requirement(config: Dict[str, Any]) -> None:
     if not bool(config.get('supervisor', {}).get('require_gpu', False)):
         return
@@ -239,11 +244,99 @@ def _run_v5_gpu(config: Dict[str, Any], project_root: Path, feedback: Dict[str, 
     pyexe = str(config.get('v5_gpu_runtime', {}).get('python_executable'))
     script = v5_root / 'run_research_hub_v5_1_local.py'
     env = os.environ.copy()
+    output_root = str(config.get('v5_gpu_runtime', {}).get('hub_output_root', '') or '')
+    log_line(
+        config,
+        f"Supervisor: V5.1 研究进程已启动，输出根={output_root}，可观察 controller_state.json / registry/experiment_registry.csv / cycles/*/cycle_summary.json",
+    )
     subprocess.run([pyexe, str(script)], cwd=str(v5_root), check=True, env=env)
 
 def _write_supervisor_state(config: Dict[str, Any], payload: Dict[str, Any]) -> None:
     root = ensure_dir(Path(str(config['paths']['research_root'])) / 'supervisor')
+    payload['updated_at'] = _now_text()
     (root / 'supervisor_state.json').write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def _compact_stage_summary(value: Any, max_chars: int = 240) -> str:
+    if value in (None, ''):
+        return ''
+    if isinstance(value, (str, int, float, bool)):
+        text = str(value)
+    else:
+        try:
+            text = json.dumps(value, ensure_ascii=False, default=str)
+        except Exception:
+            text = str(value)
+    return text[:max_chars]
+
+
+def _stage_bookkeeping(state: Dict[str, Any], stage_name: str, stage_label: str, stage_order: int, stage_total: int, status: str, summary: str = '') -> None:
+    stages = dict(state.get('stages', {}) or {})
+    stage_payload = dict(stages.get(stage_name, {}) or {})
+    if status == 'running' and 'started_at' not in stage_payload:
+        stage_payload['started_at'] = _now_text()
+    if status in {'completed', 'failed', 'skipped'}:
+        stage_payload['completed_at'] = _now_text()
+    stage_payload.update({
+        'label': stage_label,
+        'order': stage_order,
+        'total': stage_total,
+        'status': status,
+    })
+    if summary:
+        stage_payload['summary'] = summary
+    stages[stage_name] = stage_payload
+    state['stages'] = stages
+    state['current_stage'] = {
+        'name': stage_name,
+        'label': stage_label,
+        'order': stage_order,
+        'total': stage_total,
+        'status': status,
+        'updated_at': _now_text(),
+        'summary': summary,
+    }
+    history = list(state.get('stage_history', []) or [])
+    history.append({
+        'timestamp': _now_text(),
+        'stage': stage_name,
+        'label': stage_label,
+        'order': stage_order,
+        'total': stage_total,
+        'status': status,
+        'summary': summary,
+    })
+    state['stage_history'] = history[-50:]
+
+
+def _stage_start(config: Dict[str, Any], state: Dict[str, Any], stage_name: str, stage_label: str, stage_order: int, stage_total: int) -> None:
+    _stage_bookkeeping(state, stage_name, stage_label, stage_order, stage_total, 'running')
+    _write_supervisor_state(config, state)
+    log_line(config, f"Supervisor: [{stage_order}/{stage_total}] {stage_label} 开始。")
+
+
+def _stage_finish(config: Dict[str, Any], state: Dict[str, Any], stage_name: str, stage_label: str, stage_order: int, stage_total: int, summary: str = '') -> None:
+    _stage_bookkeeping(state, stage_name, stage_label, stage_order, stage_total, 'completed', summary=summary)
+    _write_supervisor_state(config, state)
+    msg = f"Supervisor: [{stage_order}/{stage_total}] {stage_label} 完成。"
+    if summary:
+        msg += f" {summary}"
+    log_line(config, msg)
+
+
+def _stage_skip(config: Dict[str, Any], state: Dict[str, Any], stage_name: str, stage_label: str, stage_order: int, stage_total: int, summary: str = '') -> None:
+    _stage_bookkeeping(state, stage_name, stage_label, stage_order, stage_total, 'skipped', summary=summary)
+    _write_supervisor_state(config, state)
+    msg = f"Supervisor: [{stage_order}/{stage_total}] {stage_label} 跳过。"
+    if summary:
+        msg += f" {summary}"
+    log_line(config, msg)
+
+
+def _stage_fail(config: Dict[str, Any], state: Dict[str, Any], stage_name: str, stage_label: str, stage_order: int, stage_total: int, summary: str) -> None:
+    _stage_bookkeeping(state, stage_name, stage_label, stage_order, stage_total, 'failed', summary=summary)
+    _write_supervisor_state(config, state)
+    log_line(config, f"Supervisor: [{stage_order}/{stage_total}] {stage_label} 失败。{summary}")
 
 def _build_execution_runtime_config(config: Dict[str, Any]) -> Path:
     exec_cfg = dict(config.get('execution_bridge', {}) or {})
@@ -283,30 +376,55 @@ def run_resume_downstream(config_path: Path, include_execution: bool = False) ->
     """从最近一次已完成的 V5 结果继续，生成持仓建议，并可选重跑执行桥。"""
     config = load_config(config_path)
     project_root = config_path.resolve().parent.parent
-    state: Dict[str, Any] = {'started_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'resume_mode': 'downstream_only'}
+    stage_total = 1 + (1 if include_execution and bool(config.get('execution_bridge', {}).get('enabled', False)) else 0)
+    state: Dict[str, Any] = {'started_at': _now_text(), 'resume_mode': 'downstream_only'}
     if bool(config.get('portfolio_recommendation', {}).get('enabled', False)):
-        rec = build_portfolio_recommendation(config=config, bridge_root=Path(str(config['paths']['bridge_root'])))
-        log_line(config, f"Supervisor: 断点续跑已生成持仓建议，run_id={rec.get('run_id')} n_names={rec.get('n_names')}")
-        state['portfolio_recommendation'] = rec
+        _stage_start(config, state, 'portfolio_recommendation', '断点续跑持仓建议生成', 1, stage_total)
+        try:
+            rec = build_portfolio_recommendation(config=config, bridge_root=Path(str(config['paths']['bridge_root'])))
+            state['portfolio_recommendation'] = rec
+            _stage_finish(
+                config,
+                state,
+                'portfolio_recommendation',
+                '断点续跑持仓建议生成',
+                1,
+                stage_total,
+                summary=f"run_id={rec.get('run_id')} n_names={rec.get('n_names')}",
+            )
+        except Exception as exc:
+            state['portfolio_recommendation_error'] = str(exc)
+            _stage_fail(config, state, 'portfolio_recommendation', '断点续跑持仓建议生成', 1, stage_total, summary=str(exc))
+            raise
     else:
         state['portfolio_recommendation_skipped'] = 'disabled'
+        _stage_skip(config, state, 'portfolio_recommendation', '断点续跑持仓建议生成', 1, stage_total, summary='disabled')
 
     if include_execution and bool(config.get('execution_bridge', {}).get('enabled', False)):
+        _stage_start(config, state, 'execution_bridge', '断点续跑执行桥', stage_total, stage_total)
         summary_path = Path(str(config['paths']['portfolio_output_root'])) / 'portfolio_recommendation.json'
         should_trade = True
         if summary_path.exists():
             summary = json.loads(summary_path.read_text(encoding='utf-8'))
             should_trade = bool(summary.get('simulation_ready', True))
         if should_trade:
-            state['execution_bridge'] = _run_execution_bridge(config=config, project_root=project_root)
-            log_line(config, 'Supervisor: 断点续跑执行桥已完成。')
+            try:
+                state['execution_bridge'] = _run_execution_bridge(config=config, project_root=project_root)
+                _stage_finish(config, state, 'execution_bridge', '断点续跑执行桥', stage_total, stage_total, summary='execution_bridge_completed')
+            except Exception as exc:
+                state['execution_bridge_error'] = str(exc)
+                _stage_fail(config, state, 'execution_bridge', '断点续跑执行桥', stage_total, stage_total, summary=str(exc))
+                raise
         else:
-            log_line(config, 'Supervisor: 断点续跑 simulation_ready=False，跳过执行桥。')
             state['execution_bridge_skipped'] = 'simulation_ready_false'
+            _stage_skip(config, state, 'execution_bridge', '断点续跑执行桥', stage_total, stage_total, summary='simulation_ready_false')
     elif include_execution:
         state['execution_bridge_skipped'] = 'disabled'
+        _stage_skip(config, state, 'execution_bridge', '断点续跑执行桥', stage_total, stage_total, summary='disabled')
     else:
         state['execution_bridge_skipped'] = 'resume_without_execution'
+        if stage_total > 1:
+            _stage_skip(config, state, 'execution_bridge', '断点续跑执行桥', stage_total, stage_total, summary='resume_without_execution')
     _write_supervisor_state(config, state)
 
 def run_integrated_supervisor(config_path: Path) -> None:
@@ -317,52 +435,161 @@ def run_integrated_supervisor(config_path: Path) -> None:
     max_ticks = int(sup.get('max_ticks', 1) or 1)
     run_forever = bool(sup.get('run_forever', False))
     sleep_seconds = int(sup.get('sleep_seconds', 300) or 300)
+    stage_defs = []
+    if bool(config.get('market_pipeline', {}).get('enabled', False)):
+        stage_defs.append(('market_pipeline', '市场数据流水线'))
+    stage_defs.append(('strategy_feedback', '策略反馈刷新'))
+    stage_defs.append(('v6_planning', 'V6 研究计划'))
+    stage_defs.append(('v5_gpu', 'V5.1 GPU 研究'))
+    if bool(config.get('portfolio_recommendation', {}).get('enabled', False)):
+        stage_defs.append(('portfolio_recommendation', '持仓建议生成'))
+    if bool(config.get('execution_bridge', {}).get('enabled', False)):
+        stage_defs.append(('execution_bridge', '执行桥'))
+    stage_total = len(stage_defs)
+    stage_order_map = {name: idx for idx, (name, _) in enumerate(stage_defs, start=1)}
+    stage_label_map = {name: label for name, label in stage_defs}
     tick = 0
     while True:
         tick += 1
-        state: Dict[str, Any] = {'tick': tick, 'started_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        state: Dict[str, Any] = {'tick': tick, 'started_at': _now_text(), 'run_mode': 'integrated_supervisor'}
         portfolio_ready = not bool(config.get('portfolio_recommendation', {}).get('enabled', False))
         if bool(config.get('market_pipeline', {}).get('enabled', False)):
+            _stage_start(config, state, 'market_pipeline', stage_label_map['market_pipeline'], stage_order_map['market_pipeline'], stage_total)
             try:
                 state['market_pipeline'] = run_market_pipeline(config=config)
+                _stage_finish(
+                    config,
+                    state,
+                    'market_pipeline',
+                    stage_label_map['market_pipeline'],
+                    stage_order_map['market_pipeline'],
+                    stage_total,
+                    summary=_compact_stage_summary(state['market_pipeline']),
+                )
             except Exception as exc:
-                log_line(config, f"Supervisor: 市场数据流水线失败：{exc}")
                 state['market_pipeline_error'] = str(exc)
+                _stage_fail(
+                    config,
+                    state,
+                    'market_pipeline',
+                    stage_label_map['market_pipeline'],
+                    stage_order_map['market_pipeline'],
+                    stage_total,
+                    summary=str(exc),
+                )
+                log_line(config, f"Supervisor: 市场数据流水线失败：{exc}")
+        _stage_start(config, state, 'strategy_feedback', stage_label_map['strategy_feedback'], stage_order_map['strategy_feedback'], stage_total)
         try:
             feedback = _build_strategy_feedback(config)
             _write_strategy_feedback(config, feedback)
             state['strategy_feedback'] = feedback
-            log_line(config, f"Supervisor: 策略反馈已刷新，regime={feedback.get('regime', 'neutral')}")
+            _stage_finish(
+                config,
+                state,
+                'strategy_feedback',
+                stage_label_map['strategy_feedback'],
+                stage_order_map['strategy_feedback'],
+                stage_total,
+                summary=f"regime={feedback.get('regime', 'neutral')}",
+            )
         except Exception as exc:
             feedback = _default_strategy_feedback(config=config, equity_curve_path=Path(str(config['paths'].get('live_execution_root', ''))) / 'equity_curve.csv')
             state['strategy_feedback_error'] = str(exc)
+            _stage_fail(
+                config,
+                state,
+                'strategy_feedback',
+                stage_label_map['strategy_feedback'],
+                stage_order_map['strategy_feedback'],
+                stage_total,
+                summary=str(exc),
+            )
             log_line(config, f"Supervisor: 策略反馈生成失败：{exc}")
+        v6_stage_order = stage_order_map['v6_planning']
+        v6_stage_label = stage_label_map['v6_planning']
         if _should_run_token_plan(config):
-            log_line(config, 'Supervisor: 开始运行 V6 研究计划层。')
-            run_v6_cycle(config_path=config_path, mode='full_cycle')
-            _write_stamp(config)
-            state['v6_ran'] = True
+            _stage_start(config, state, 'v6_planning', v6_stage_label, v6_stage_order, stage_total)
+            try:
+                run_v6_cycle(config_path=config_path, mode='full_cycle')
+                _write_stamp(config)
+                state['v6_ran'] = True
+                _stage_finish(config, state, 'v6_planning', v6_stage_label, v6_stage_order, stage_total, summary='full_cycle_completed')
+            except Exception as exc:
+                state['v6_ran'] = False
+                state['v6_error'] = str(exc)
+                _stage_fail(config, state, 'v6_planning', v6_stage_label, v6_stage_order, stage_total, summary=str(exc))
+                raise
         else:
-            log_line(config, 'Supervisor: 本 tick 跳过 V6，沿用 24 小时内最近一次研究计划。')
             state['v6_ran'] = False
-        log_line(config, 'Supervisor: 开始运行 V5.1 GPU 循环研究。')
-        _run_v5_gpu(config, project_root, feedback=feedback)
-        state['v5_gpu_completed'] = True
+            _stage_skip(config, state, 'v6_planning', v6_stage_label, v6_stage_order, stage_total, summary='沿用 24 小时内最近一次研究计划')
+        _stage_start(config, state, 'v5_gpu', stage_label_map['v5_gpu'], stage_order_map['v5_gpu'], stage_total)
+        try:
+            _run_v5_gpu(config, project_root, feedback=feedback)
+            state['v5_gpu_completed'] = True
+            _stage_finish(
+                config,
+                state,
+                'v5_gpu',
+                stage_label_map['v5_gpu'],
+                stage_order_map['v5_gpu'],
+                stage_total,
+                summary=f"hub_output_root={config.get('v5_gpu_runtime', {}).get('hub_output_root', '')}",
+            )
+        except Exception as exc:
+            state['v5_gpu_error'] = str(exc)
+            _stage_fail(
+                config,
+                state,
+                'v5_gpu',
+                stage_label_map['v5_gpu'],
+                stage_order_map['v5_gpu'],
+                stage_total,
+                summary=str(exc),
+            )
+            raise
         if bool(config.get('portfolio_recommendation', {}).get('enabled', False)):
+            _stage_start(config, state, 'portfolio_recommendation', stage_label_map['portfolio_recommendation'], stage_order_map['portfolio_recommendation'], stage_total)
             try:
                 rec = build_portfolio_recommendation(config=config, bridge_root=Path(str(config['paths']['bridge_root'])))
-                log_line(config, f"Supervisor: 持仓建议已生成，run_id={rec.get('run_id')} n_names={rec.get('n_names')}")
                 state['portfolio_recommendation'] = rec
                 portfolio_ready = True
+                _stage_finish(
+                    config,
+                    state,
+                    'portfolio_recommendation',
+                    stage_label_map['portfolio_recommendation'],
+                    stage_order_map['portfolio_recommendation'],
+                    stage_total,
+                    summary=f"run_id={rec.get('run_id')} n_names={rec.get('n_names')}",
+                )
             except Exception as exc:
-                log_line(config, f"Supervisor: 持仓建议生成失败：{exc}")
                 state['portfolio_recommendation_error'] = str(exc)
                 portfolio_ready = False
+                _stage_fail(
+                    config,
+                    state,
+                    'portfolio_recommendation',
+                    stage_label_map['portfolio_recommendation'],
+                    stage_order_map['portfolio_recommendation'],
+                    stage_total,
+                    summary=str(exc),
+                )
+                log_line(config, f"Supervisor: 持仓建议生成失败：{exc}")
         if bool(config.get('execution_bridge', {}).get('enabled', False)):
+            _stage_start(config, state, 'execution_bridge', stage_label_map['execution_bridge'], stage_order_map['execution_bridge'], stage_total)
             try:
                 if not portfolio_ready:
-                    log_line(config, 'Supervisor: 持仓建议未成功生成，本轮跳过执行桥以避免沿用旧文件。')
                     state['execution_bridge_skipped'] = 'portfolio_recommendation_failed'
+                    _stage_skip(
+                        config,
+                        state,
+                        'execution_bridge',
+                        stage_label_map['execution_bridge'],
+                        stage_order_map['execution_bridge'],
+                        stage_total,
+                        summary='portfolio_recommendation_failed',
+                    )
+                    log_line(config, 'Supervisor: 持仓建议未成功生成，本轮跳过执行桥以避免沿用旧文件。')
                     _write_supervisor_state(config, state)
                     if (not run_forever) and tick >= max_ticks:
                         break
@@ -375,16 +602,41 @@ def run_integrated_supervisor(config_path: Path) -> None:
                     should_trade = bool(summary.get('simulation_ready', True))
                 if should_trade:
                     state['execution_bridge'] = _run_execution_bridge(config=config, project_root=project_root)
-                    log_line(config, 'Supervisor: 执行桥已完成。')
                     feedback = _build_strategy_feedback(config)
                     _write_strategy_feedback(config, feedback)
                     state['strategy_feedback_post_trade'] = feedback
+                    _stage_finish(
+                        config,
+                        state,
+                        'execution_bridge',
+                        stage_label_map['execution_bridge'],
+                        stage_order_map['execution_bridge'],
+                        stage_total,
+                        summary='execution_bridge_completed',
+                    )
                 else:
-                    log_line(config, 'Supervisor: 本轮 simulation_ready=False，跳过执行桥。')
                     state['execution_bridge_skipped'] = 'simulation_ready_false'
+                    _stage_skip(
+                        config,
+                        state,
+                        'execution_bridge',
+                        stage_label_map['execution_bridge'],
+                        stage_order_map['execution_bridge'],
+                        stage_total,
+                        summary='simulation_ready_false',
+                    )
             except Exception as exc:
-                log_line(config, f"Supervisor: 执行桥失败：{exc}")
                 state['execution_bridge_error'] = str(exc)
+                _stage_fail(
+                    config,
+                    state,
+                    'execution_bridge',
+                    stage_label_map['execution_bridge'],
+                    stage_order_map['execution_bridge'],
+                    stage_total,
+                    summary=str(exc),
+                )
+                log_line(config, f"Supervisor: 执行桥失败：{exc}")
         _write_supervisor_state(config, state)
         if (not run_forever) and tick >= max_ticks:
             break

@@ -107,6 +107,41 @@ def _effective_config_path(explicit_path: str, profile: str) -> Path:
     return _write_runtime_config(profile)
 
 
+def _mode_stage_preview(mode: str, config: Dict[str, Any]) -> list[str]:
+    if mode == "integrated_supervisor":
+        stages = []
+        if bool(config.get("market_pipeline", {}).get("enabled", False)):
+            stages.append("市场数据流水线")
+        stages.extend(["策略反馈刷新", "V6 研究计划"])
+        stages.append("V5.1 GPU 研究")
+        if bool(config.get("portfolio_recommendation", {}).get("enabled", False)):
+            stages.append("持仓建议生成")
+        if bool(config.get("execution_bridge", {}).get("enabled", False)):
+            stages.append("执行桥")
+        return stages
+    if mode == "resume_downstream":
+        stages = ["断点续跑持仓建议"]
+        if bool(config.get("execution_bridge", {}).get("enabled", False)):
+            stages.append("可选执行桥")
+        return stages
+    mapping = {
+        "full_cycle": ["基础表刷新与事件抓取", "事件抽取", "数据缺口分析", "研究计划生成", "桥接产物生成"],
+        "ingest_only": ["基础表刷新与事件抓取"],
+        "extract_only": ["基础表刷新与事件抓取", "事件抽取"],
+        "gap_only": ["基础表刷新与事件抓取", "事件抽取", "数据缺口分析"],
+        "plan_only": ["基础表刷新与事件抓取", "事件抽取", "数据缺口分析", "研究计划生成"],
+        "bridge_only": ["基础表刷新与事件抓取", "事件抽取", "数据缺口分析", "研究计划生成", "桥接产物生成"],
+    }
+    return mapping.get(mode, ["未知阶段"])
+
+
+def _print_stage_preview(mode: str, config: Dict[str, Any]) -> None:
+    stages = _mode_stage_preview(mode=mode, config=config)
+    print("阶段预览:")
+    for idx, stage in enumerate(stages, start=1):
+        print(f"  {idx}. {stage}")
+
+
 def main() -> None:
     args = parse_args()
     config_path = _effective_config_path(args.config, args.profile)
@@ -117,6 +152,9 @@ def main() -> None:
     print("运行档位:", args.profile)
     print("V5 cycles:", config.get("supervisor", {}).get("v5_gpu_max_cycles_per_tick"))
     print("研究计划最小间隔(小时):", config.get("supervisor", {}).get("token_plan_min_interval_hours"))
+    print("日志根目录:", config.get("paths", {}).get("log_root"))
+    print("Supervisor 状态文件:", Path(str(config.get("paths", {}).get("research_root", ""))) / "supervisor" / "supervisor_state.json")
+    _print_stage_preview(mode=args.mode, config=config)
     if args.mode == "integrated_supervisor":
         run_integrated_supervisor(config_path)
     elif args.mode == "resume_downstream":

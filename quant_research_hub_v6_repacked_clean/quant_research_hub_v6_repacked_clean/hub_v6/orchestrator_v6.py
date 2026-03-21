@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from time import perf_counter
 
 from .config_utils import load_config
 from .context_pack import build_research_context_pack, save_research_context_pack
@@ -16,11 +17,28 @@ from .research_brief_engine import build_research_brief, save_research_brief
 from .v5_bridge import build_research_actions, save_bridge_outputs
 
 
+def _v6_stage_labels(mode: str) -> list[str]:
+    labels: list[str] = []
+    if mode in {"ingest_only", "extract_only", "gap_only", "plan_only", "bridge_only", "full_cycle"}:
+        labels.append("基础表刷新与事件抓取")
+    if mode in {"extract_only", "gap_only", "plan_only", "bridge_only", "full_cycle"}:
+        labels.append("事件抽取")
+    if mode in {"gap_only", "plan_only", "bridge_only", "full_cycle"}:
+        labels.append("数据清单与缺口分析")
+    if mode in {"plan_only", "bridge_only", "full_cycle"}:
+        labels.append("研究证据包与研究计划")
+    if mode in {"bridge_only", "full_cycle"}:
+        labels.append("桥接产物生成")
+    return labels
+
+
 def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
     """运行 V6 单轮编排。"""
     config = load_config(config_path=config_path)
     project_root = config_path.resolve().parent.parent
     prompt_root = project_root / "prompts"
+    stage_labels = _v6_stage_labels(mode=mode)
+    log_line(config, f"V6: 进入单轮编排，mode={mode} stages={len(stage_labels)}")
 
     raw_items = []
     structured_events = []
@@ -28,20 +46,32 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
     data_gap_report = {}
     context_pack = {}
     research_brief = {}
+    stage_idx = 0
 
     if mode in {"ingest_only", "extract_only", "gap_only", "plan_only", "bridge_only", "full_cycle"}:
+        stage_idx += 1
+        t0 = perf_counter()
+        log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 基础表刷新与事件抓取开始")
         refresh_market_basics(config=config)
         raw_items = ingest_events_real(config=config)
+        log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 基础表刷新与事件抓取完成 raw_items={len(raw_items)} elapsed={perf_counter() - t0:.1f}s")
 
     if mode in {"extract_only", "gap_only", "plan_only", "bridge_only", "full_cycle"}:
+        stage_idx += 1
+        t0 = perf_counter()
+        log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 事件抽取开始 input_raw_items={len(raw_items)}")
         structured_events = extract_events_with_worker(
             config=config,
             raw_items=raw_items,
             prompt_root=prompt_root,
         )
         save_event_store(config=config, events=structured_events)
+        log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 事件抽取完成 structured_events={len(structured_events)} elapsed={perf_counter() - t0:.1f}s")
 
     if mode in {"gap_only", "plan_only", "bridge_only", "full_cycle"}:
+        stage_idx += 1
+        t0 = perf_counter()
+        log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 数据清单与缺口分析开始")
         inventory = build_inventory_real(config=config)
         save_inventory(config=config, inventory=inventory)
         data_gap_report = build_data_gap_report(
@@ -50,8 +80,17 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
             structured_events=structured_events,
         )
         save_data_gap_report(config=config, report=data_gap_report)
+        log_line(
+            config,
+            f"V6: [{stage_idx}/{len(stage_labels)}] 数据清单与缺口分析完成 datasets={len(list(inventory.get('datasets', []) or []))} "
+            f"refresh_tasks={len(list(data_gap_report.get('refresh_tasks', []) or []))} "
+            f"recompute_tasks={len(list(data_gap_report.get('recompute_tasks', []) or []))} elapsed={perf_counter() - t0:.1f}s",
+        )
 
     if mode in {"plan_only", "bridge_only", "full_cycle"}:
+        stage_idx += 1
+        t0 = perf_counter()
+        log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 研究证据包与研究计划开始")
         context_pack = build_research_context_pack(
             config=config,
             structured_events=structured_events,
@@ -75,7 +114,16 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
                 len(list(research_brief.get("candidate_experiments", []) or [])),
             ),
         )
+        log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 研究证据包与研究计划完成 elapsed={perf_counter() - t0:.1f}s")
 
     if mode in {"bridge_only", "full_cycle"}:
+        stage_idx += 1
+        t0 = perf_counter()
+        log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 桥接产物生成开始")
         actions = build_research_actions(brief=research_brief)
         save_bridge_outputs(config=config, actions=actions)
+        log_line(
+            config,
+            f"V6: [{stage_idx}/{len(stage_labels)}] 桥接产物生成完成 feature_profiles={len(list(actions.get('candidate_override', {}).get('feature_profiles', []) or []))} "
+            f"label_horizons={len(list(actions.get('candidate_override', {}).get('label_horizons', []) or []))} elapsed={perf_counter() - t0:.1f}s",
+        )

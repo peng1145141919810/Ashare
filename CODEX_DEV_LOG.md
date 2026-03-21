@@ -51,6 +51,10 @@
   - `python F:\quant_data\Ashare\launch_canonical.py --profile overnight`
   - `python F:\quant_data\Ashare\launch_canonical.py --profile quick_test`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode resume_downstream --profile quick_test`
+- Runtime transparency:
+  - `main_research_runner.py` now prints a stage preview before dispatch.
+  - `supervisor_state.json` is updated incrementally during integrated runs instead of only at the end.
+  - `supervisor_state.json` now carries `current_stage`, `stages`, and `stage_history` for operator inspection.
 - Latest confirmed milestone:
   - V6 research plan generation confirmed on `2026-03-21 14:09:34`
   - quick_test V5 cycle observed generating new candidates on `2026-03-21 14:39:15`
@@ -137,6 +141,7 @@
   - `hub_v6/supervisor.py` is the daily conductor for the full chain.
   - It calls `hub_v6/market_pipeline.py`, refreshes strategy feedback, decides whether V6 planning should run, launches V5 GPU research, then calls portfolio recommendation and the execution bridge.
   - It writes top-level run state to `data/event_lake_v6/research/supervisor/supervisor_state.json`.
+  - During runtime it now updates `current_stage`, per-stage status, and recent stage history incrementally so operators can see where the chain is currently sitting.
 - Market and event layer:
   - `hub_v6/market_pipeline.py` updates HS300, enriched daily files, price snapshots, and the training table.
   - `hub_v6/event_ingest.py` collects raw announcements and Tushare news into the event lake.
@@ -198,7 +203,7 @@
 ## Artifact Registry
 | Artifact | Producer | Consumer | Path | Format | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `supervisor_state.json` | integrated supervisor | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\supervisor\supervisor_state.json` | JSON | first stop for top-level step status |
+| `supervisor_state.json` | integrated supervisor | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\supervisor\supervisor_state.json` | JSON | first stop for top-level step status; now includes `current_stage`, `stages`, and `stage_history` during runtime |
 | `market_pipeline_report.json` | market pipeline | operator / debugging | `F:\quant_data\Ashare\data\daily_cache_v6\market_pipeline_report.json` | JSON | shows data sync and train append status |
 | `research_context_pack.json` | context pack builder | research brief engine / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\context_pack\research_context_pack.json` | JSON | full evidence pack |
 | `research_brief.json` | V6 research planner | V5 bridge / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\briefs\research_brief.json` | JSON | core planning artifact |
@@ -275,6 +280,8 @@
 ## What To Inspect After A Run
 - Supervisor state:
   - `F:\quant_data\Ashare\data\event_lake_v6\research\supervisor\supervisor_state.json`
+  - inspect `current_stage` while a run is active
+  - inspect `stages` and `stage_history` to see which phase completed, failed, or was skipped
 - Market pipeline report:
   - `F:\quant_data\Ashare\data\daily_cache_v6\market_pipeline_report.json`
 - Research brief:
@@ -860,3 +867,35 @@ All timestamps below are local file write times in the current workspace and sho
   - Marker files are additive only.
 - Rollback:
   - Remove the marker files and restore the prior law/manifest wording if the explicit path-status layer is not wanted.
+
+### 2026-03-21 20:01
+- Type:
+  - `ops`
+- Scope:
+  - `runtime`
+  - `observability`
+- Files:
+  - `F:\quant_data\Ashare\main_research_runner.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\orchestrator_v6.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\supervisor.py`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added stage-preview output in `main_research_runner.py` so the operator can see the planned chain before execution starts.
+  - Added clearer step-by-step V6 progress logs in `orchestrator_v6.py` with stage counters and elapsed time.
+  - Reworked `supervisor.py` so `supervisor_state.json` is written incrementally during runtime and now records `current_stage`, per-stage status, and recent stage history.
+  - Added clearer start/finish/skip/fail messages around market sync, strategy feedback, V6 planning, V5 GPU research, portfolio generation, execution bridge, and resume-downstream steps.
+  - Added V5 visibility hints pointing operators to `controller_state.json`, `registry/experiment_registry.csv`, and `cycles/*/cycle_summary.json` while the GPU stage is running.
+- Impact:
+  - The integrated chain is less black-box during long runs.
+  - Operators can inspect both the terminal output and `supervisor_state.json` to see what is currently running and what already finished.
+  - No business logic, data logic, or import structure changed.
+- Validation:
+  - `python -m py_compile main_research_runner.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\orchestrator_v6.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\supervisor.py`
+  - `python tools\preflight_check.py --profile quick_test --mode integrated_supervisor`
+  - `python launch_canonical.py --preflight-only --profile quick_test --mode integrated_supervisor`
+  - No full pipeline run was performed.
+- Compatibility:
+  - Backward compatible.
+  - Existing downstream consumers of `supervisor_state.json` should continue to work because the new fields are additive.
+- Rollback:
+  - Remove the new progress-printing helpers and incremental stage bookkeeping if the extra observability is judged too noisy.
