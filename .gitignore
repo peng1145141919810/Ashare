@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+venvs/
+
+# JetBrains / editor
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+**/logs/
+
+# Local configs / secrets
+.env
+*.env
+secrets/
+**/*.local.json
+**/*.autogen.json
+**/hub_config.v6.runtime.*.json
+**/gmtrade_local_config.json
+**/local_settings.py
+!**/local_settings.example.py
+quant_research_hub_v6_repacked_clean/quant_research_hub_v6_repacked_clean/configs/hub_config.v6.autorun.json
+quant_research_hub_v6_repacked_clean/quant_research_hub_v6_repacked_clean/configs/hub_config.v6.blueprint.json
+quant_research_hub_v6_repacked_clean/quant_research_hub_v6_repacked_clean/configs/hub_config.v6.supervisor_check.json
+quant_research_hub_v6_repacked_clean/quant_research_hub_v6_repacked_clean/v5_gpu_runtime/configs/hub_config.v5_1.integrated_gpu.json
+
+# Large outputs / datasets / caches
+data/
+outputs/
+tmp/
+cache/
+**/runs/
+**/cycles/
+**/registry/

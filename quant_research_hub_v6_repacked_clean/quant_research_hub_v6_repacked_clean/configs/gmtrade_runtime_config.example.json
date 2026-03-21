@@ -1,0 +1,24 @@
+{
+  "portfolio_root": "F:\\quant_data\\Ashare\\data\\research_hub_v5_1_gpu_integrated",
+  "explicit_portfolio_path": "",
+  "price_snapshot_path": "",
+  "output_dir": "F:\\quant_data\\Ashare\\data\\gmtrade_execution_bridge",
+  "broker": {
+    "token": "替换为你的 token",
+    "account_id": "替换为你的掘金股票仿真账户ID",
+    "account_alias": "paper_stock_01",
+    "endpoint": "api.myquant.cn:9000",
+    "buy_price_ratio": 1.01,
+    "sell_price_ratio": 0.99,
+    "order_wait_seconds": 3.0,
+    "sell_by_available": true,
+    "lot_size": 100,
+    "min_trade_value": 2000.0,
+    "cash_reserve_ratio": 0.02
+  },
+  "portfolio": {
+    "max_names": 20,
+    "fallback_equal_weight": true,
+    "weight_sum_limit": 0.98
+  }
+}

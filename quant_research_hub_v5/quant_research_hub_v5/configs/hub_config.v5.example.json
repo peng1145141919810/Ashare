@@ -1,0 +1,90 @@
+{
+  "project_name": "quant_research_hub_v5",
+  "project_root": "F:/quant_data/Ashare/quant_research_hub_v5",
+  "train_table_dir": "F:/quant_data/Ashare/data/train_tables/baseline_v2",
+  "hub_output_root": "F:/quant_data/Ashare/data/research_hub_v5",
+  "execution": {
+    "python_executable": "C:/Users/Administrator/PyCharmMiscProject/.venv/Scripts/python.exe"
+  },
+  "strategy": {
+    "strategy_name": "autonomous_research_brain_v5",
+    "run_tag": "research_brain_v5",
+    "train_output_subdir": "research_brain_v5",
+    "label_col": "future_ret_5",
+    "label_horizon": 5,
+    "top_k": 20,
+    "portfolio_holding_days": 5,
+    "portfolio_min_listed_days": 120,
+    "portfolio_min_amount_mean_20": 1000000,
+    "portfolio_max_vol_20": 0.12,
+    "portfolio_base_exposure": 1.0,
+    "portfolio_weak_market_exposure": 0.5,
+    "portfolio_dd_stage1": 0.10,
+    "portfolio_dd_stage2": 0.18,
+    "portfolio_dd_stage1_exposure": 0.6,
+    "portfolio_dd_stage2_exposure": 0.3,
+    "portfolio_single_name_cap": 0.10,
+    "portfolio_single_industry_cap": 0.25,
+    "portfolio_max_names_per_industry": 5
+  },
+  "data_io": {
+    "max_files": 0,
+    "sample_rows": 0
+  },
+  "evaluation_rules": {
+    "w_valid_ic": 200.0,
+    "w_test_ic": 250.0,
+    "w_valid_spearman": 150.0,
+    "w_test_spearman": 200.0,
+    "w_ret": 20.0,
+    "w_sharpe": 10.0,
+    "w_drawdown": 80.0
+  },
+  "evolution_rules": {
+    "champion_keep_top_n": 1,
+    "challenger_keep_top_n": 3,
+    "champion_min_runs": 2,
+    "stability_std_penalty": 0.25,
+    "challenger_min_total_score": 30.0,
+    "champion_min_total_score": 45.0,
+    "challenger_min_sharpe": 0.5,
+    "champion_min_sharpe": 1.0,
+    "challenger_max_drawdown_abs": 0.30,
+    "champion_max_drawdown_abs": 0.22,
+    "retire_below_total_score": 10.0
+  },
+  "deployment_gate": {
+    "min_total_score": 45.0,
+    "min_sharpe": 1.0,
+    "max_drawdown_abs": 0.22
+  },
+  "research_brain": {
+    "cycle_candidate_budget": 12,
+    "parent_pool_size": 4,
+    "route_min_candidates": 1,
+    "max_cycles": null,
+    "sleep_seconds": 0
+  },
+  "route_space": {
+    "feature_profiles": ["baseline_plus", "momentum_cross_section", "vol_liq_quality", "defensive_residual", "interaction_sparse", "generated_feature_pack"],
+    "model_families": ["lightgbm_auto", "ridge_ranker", "extra_trees", "hist_gbdt", "random_forest", "formula_blend", "generated_family"],
+    "training_logics": ["baseline", "weighted_recent", "feature_select", "generated_training"],
+    "label_horizons": [5, 10, 20],
+    "top_ks": [15, 20, 30],
+    "base_exposures": [1.0, 0.9, 0.8],
+    "weak_exposures": [0.5, 0.4, 0.3]
+  },
+  "llm_brain": {
+    "enabled": false,
+    "base_url": "https://api.openai.com/v1",
+    "api_key_env": "OPENAI_API_KEY",
+    "model": "gpt-5.4-thinking",
+    "temperature": 0.2,
+    "timeout_seconds": 120
+  },
+  "data_scout": {
+    "enabled": false,
+    "candidate_urls": [],
+    "max_chars_per_page": 5000
+  }
+}
