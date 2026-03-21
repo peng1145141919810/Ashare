@@ -8,6 +8,9 @@
 - 被包装的业务根入口: `main_research_runner.py`
 - 默认模式: `integrated_supervisor`
 - 默认 profile: `quick_test`
+- 精准撮合建议工作流:
+  - `research_only` -> 发布 `portfolio release`
+  - `trade_clock_service.py` -> 常驻读时间并触发 `execution_only`
 
 不要把旧文档里提到的历史入口当成现行真相。当前运行法统以 `CODEX_DEV_LOG.md` 为准。
 
@@ -57,6 +60,23 @@ python launch_canonical.py --preflight-only --profile quick_test --mode integrat
 ```powershell
 python launch_canonical.py --profile quick_test
 ```
+
+## 精准撮合分层
+
+- 研究层:
+  - `python launch_canonical.py --profile quick_test --mode research_only`
+- 发布层:
+  - `python launch_canonical.py --profile quick_test --mode release_only`
+- 执行层:
+  - `python launch_canonical.py --profile quick_test --mode execution_only --gate-only`
+- 执行账户模式切换:
+  - 模拟调试: `python launch_canonical.py --profile quick_test --mode execution_only --gate-only --execution-mode simulation`
+  - 精准撮合巡检: `python launch_canonical.py --profile quick_test --mode execution_only --gate-only --execution-mode precision --precision-trade off`
+  - 精准撮合允许交易: `python launch_canonical.py --profile quick_test --mode execution_only --execution-mode precision --precision-trade on`
+- 时钟服务:
+  - `python trade_clock_service.py --profile quick_test --once`
+  - 开机自启动安装脚本: `scripts/install_trade_clock_autostart.ps1`
+  - 当前默认建议: `precision + trade off`
 
 ## 运行和排查
 

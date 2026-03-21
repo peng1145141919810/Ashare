@@ -3,6 +3,7 @@
   "law_version": 1,
   "canonical": {
     "formal_operator_entry": "F:\\quant_data\\Ashare\\launch_canonical.py",
+    "trade_clock_service_entry": "F:\\quant_data\\Ashare\\trade_clock_service.py",
     "wrapped_business_root_entry": "F:\\quant_data\\Ashare\\main_research_runner.py",
     "live_runtime_root": "F:\\quant_data\\Ashare\\quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean",
     "default_mode": "integrated_supervisor",

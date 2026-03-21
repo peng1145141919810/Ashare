@@ -186,11 +186,73 @@ class GMTradeSimBroker(BaseBroker):
             )
         return result
 
+    @staticmethod
+    def _side_name(value: Any) -> str:
+        side = safe_int(value, 0)
+        if hasattr(gm, "OrderSide_Buy") and side == safe_int(getattr(gm, "OrderSide_Buy"), -1):
+            return "BUY"
+        if hasattr(gm, "OrderSide_Sell") and side == safe_int(getattr(gm, "OrderSide_Sell"), -1):
+            return "SELL"
+        return str(side)
+
+    @staticmethod
+    def _order_status_name(value: Any) -> str:
+        status = safe_int(value, 0)
+        mapping = {
+            safe_int(getattr(gm, "OrderStatus_New", 1), 1): "New",
+            safe_int(getattr(gm, "OrderStatus_PartiallyFilled", 2), 2): "PartiallyFilled",
+            safe_int(getattr(gm, "OrderStatus_Filled", 3), 3): "Filled",
+            safe_int(getattr(gm, "OrderStatus_Canceled", 5), 5): "Canceled",
+            safe_int(getattr(gm, "OrderStatus_Rejected", 8), 8): "Rejected",
+            safe_int(getattr(gm, "OrderStatus_Expired", 12), 12): "Expired",
+            safe_int(getattr(gm, "OrderStatus_PendingNew", 10), 10): "PendingNew",
+            safe_int(getattr(gm, "OrderStatus_PendingCancel", 6), 6): "PendingCancel",
+        }
+        return mapping.get(status, str(status))
+
+    def _normalize_order_row(self, item: Any) -> Dict[str, Any]:
+        symbol = from_gm_symbol(getattr(item, "symbol", ""))
+        volume = safe_int(getattr(item, "volume", 0))
+        filled_volume = safe_int(getattr(item, "filled_volume", 0))
+        return {
+            "symbol": symbol,
+            "side": self._side_name(getattr(item, "side", 0)),
+            "cl_ord_id": str(getattr(item, "cl_ord_id", "")),
+            "order_id": str(getattr(item, "order_id", "")),
+            "status": safe_int(getattr(item, "status", 0)),
+            "status_name": self._order_status_name(getattr(item, "status", 0)),
+            "status_detail": str(getattr(item, "ord_rej_reason_detail", "") or ""),
+            "volume": volume,
+            "filled_volume": filled_volume,
+            "remaining_shares": max(volume - filled_volume, 0),
+            "price": safe_float(getattr(item, "price", 0.0)),
+            "filled_amount": safe_float(getattr(item, "filled_amount", 0.0)),
+        }
+
+    def _get_orders_raw(self):
+        if hasattr(gm, "get_orders"):
+            return gm.get_orders()
+        return []
+
+    def _get_unfinished_orders_raw(self):
+        if hasattr(gm, "get_unfinished_orders"):
+            return gm.get_unfinished_orders()
+        return []
+
+    def _filter_order_rows(self, rows: List[Dict[str, Any]], submitted_ids: List[Tuple[str, str, str]]) -> List[Dict[str, Any]]:
+        if not submitted_ids:
+            return rows
+        id_set = {(cl_id, order_id) for cl_id, order_id, _ in submitted_ids}
+        return [
+            row for row in rows
+            if (str(row.get("cl_ord_id", "")), str(row.get("order_id", ""))) in id_set
+        ]
+
     def execute_orders(
         self,
         order_intents: List[OrderIntent],
         price_map: Dict[str, float],
-    ) -> Tuple[AccountState, List[FillRecord], List[dict]]:
+    ) -> Tuple[AccountState, List[FillRecord], List[dict], Dict[str, Any]]:
         """执行订单并回收成交回报。
 
         Args:
@@ -198,7 +260,7 @@ class GMTradeSimBroker(BaseBroker):
             price_map: 最新价格映射。
 
         Returns:
-            Tuple[AccountState, List[FillRecord], List[dict]]: 账户状态、成交记录和委托摘要。
+            Tuple[AccountState, List[FillRecord], List[dict], Dict[str, Any]]: 账户状态、成交记录、原始摘要和委托状态上下文。
         """
         self._login()
         raw_orders: List[dict] = []
@@ -207,6 +269,9 @@ class GMTradeSimBroker(BaseBroker):
         for order in order_intents:
             kwargs = self._build_order_kwargs(order)
             result = gm.order_volume(**kwargs)
+            submitted = self._extract_order_ids(result)
+            cl_ord_id = submitted[0][0] if submitted else ""
+            order_id = submitted[0][1] if submitted else ""
             raw_orders.append(
                 {
                     "symbol": order.symbol,
@@ -216,15 +281,21 @@ class GMTradeSimBroker(BaseBroker):
                     "ref_price": order.ref_price,
                     "submit_price": kwargs["price"],
                     "reason": order.reason,
+                    "cl_ord_id": cl_ord_id,
+                    "order_id": order_id,
                     "raw_text": str(result),
                 }
             )
-            submitted_ids.extend(self._extract_order_ids(result))
+            submitted_ids.extend(submitted)
             time.sleep(0.2)
 
         time.sleep(self.order_wait_seconds)
 
         reports = gm.get_execution_reports() if hasattr(gm, "get_execution_reports") else []
+        order_rows = [self._normalize_order_row(item) for item in self._get_orders_raw()]
+        unfinished_order_rows = [self._normalize_order_row(item) for item in self._get_unfinished_orders_raw()]
+        order_rows = self._filter_order_rows(order_rows, submitted_ids=submitted_ids)
+        unfinished_order_rows = self._filter_order_rows(unfinished_order_rows, submitted_ids=submitted_ids)
         report_rows = []
         fills: List[FillRecord] = []
         id_set = {(cl_id, order_id) for cl_id, order_id, _ in submitted_ids}
@@ -275,4 +346,8 @@ class GMTradeSimBroker(BaseBroker):
             )
 
         after_state = self.load_account_state()
-        return after_state, fills, raw_orders + report_rows
+        return after_state, fills, raw_orders + report_rows + order_rows + unfinished_order_rows, {
+            "submitted_orders": raw_orders,
+            "day_orders": order_rows,
+            "unfinished_orders": unfinished_order_rows,
+        }

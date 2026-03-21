@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List
 
 import requests
+
+from .json_parse_utils import parse_json_object_loose
 
 
 VALID_EVENT_TYPES = {
@@ -119,8 +120,10 @@ def parse_single_title(title: str, config: Dict[str, Any]) -> Dict[str, Any]:
     """
     provider = _provider_cfg(config)
     base_url = str(provider.get("base_url", "http://localhost:11434")).rstrip("/")
-    model = str(provider.get("model", "qwen2.5:7b") or "qwen2.5:7b")
-    timeout_seconds = int(provider.get("timeout_seconds", 120) or 120)
+    model = str(provider.get("event_extract_model") or provider.get("model", "qwen2.5:7b") or "qwen2.5:7b")
+    timeout_seconds = int(
+        provider.get("event_extract_timeout_seconds", provider.get("timeout_seconds", 120)) or 120
+    )
 
     payload = {
         "model": model,
@@ -133,7 +136,9 @@ def parse_single_title(title: str, config: Dict[str, Any]) -> Dict[str, Any]:
     resp.raise_for_status()
     data = resp.json()
     content = str(data.get("message", {}).get("content", "") or "").strip()
-    parsed = json.loads(content)
+    parsed = parse_json_object_loose(content)
+    if not parsed:
+        raise ValueError("local_ollama_non_json_response")
 
     event_type = str(parsed.get("event_type", "其他") or "其他")
     if event_type not in VALID_EVENT_TYPES:

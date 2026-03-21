@@ -537,7 +537,11 @@ def extract_events_with_worker(config: Dict[str, Any], raw_items: List[Dict[str,
         results.append(_fallback_event(item, float(item.get("_rule_score", 0.0) or 0.0)))
 
     if llm_items:
-        model = str(config.get("local_ollama", {}).get("model", "qwen2.5:7b") or "qwen2.5:7b")
+        model = str(
+            config.get("local_ollama", {}).get("event_extract_model")
+            or config.get("local_ollama", {}).get("model")
+            or "qwen2.5:7b"
+        )
         log_line(config, f"事件抽取进入本地模型：本地事件数={len(llm_items)} model={model}")
         parsed_items = batch_parse_titles(items=llm_items, config=config)
         for idx, (raw, parsed) in enumerate(zip(llm_items, parsed_items), start=1):
@@ -561,6 +565,11 @@ def extract_events_with_worker(config: Dict[str, Any], raw_items: List[Dict[str,
             "llm_events": len(llm_items),
             "fallback_events": len(fallback_only),
             "backend": "local_ollama",
+            "model": str(
+                config.get("local_ollama", {}).get("event_extract_model")
+                or config.get("local_ollama", {}).get("model")
+                or "qwen2.5:7b"
+            ),
             "avg_evidence_quality": round(
                 sum(float(x.get("structured_facts", {}).get("evidence_quality_score", 0.0) or 0.0) for x in results) / max(len(results), 1),
                 4,

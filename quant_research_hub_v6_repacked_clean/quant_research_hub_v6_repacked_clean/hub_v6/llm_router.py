@@ -11,6 +11,8 @@ from typing import Any, Dict, Optional
 
 import requests
 
+from .json_parse_utils import parse_json_object_loose
+
 
 class DeepSeekChatClient:
     """DeepSeek 低成本执行脑客户端。"""
@@ -508,7 +510,7 @@ class LocalOllamaChatClient:
             resp.raise_for_status()
             data = resp.json()
             content = str(data.get("message", {}).get("content", "") or "").strip()
-            parsed = json.loads(content) if content else {}
+            parsed = parse_json_object_loose(content) if content else {}
             return {
                 "ok": isinstance(parsed, dict) and bool(parsed),
                 "data": parsed if isinstance(parsed, dict) else {},

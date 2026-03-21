@@ -19,8 +19,9 @@
   - any new operator warning
 
 ## Latest Stable Snapshot
-- Snapshot date: `2026-03-21`
+- Snapshot date: `2026-03-22`
 - Formal operator entry: `F:\quant_data\Ashare\launch_canonical.py`
+- Formal trade-clock service entry: `F:\quant_data\Ashare\trade_clock_service.py`
 - Canonical business root entry: `F:\quant_data\Ashare\main_research_runner.py`
 - Default mode: `integrated_supervisor`
 - Default profile: `quick_test`
@@ -35,6 +36,11 @@
   - use `$env:DISABLE_AUTO_PUSH='1'; git commit -m "..."; Remove-Item Env:DISABLE_AUTO_PUSH` when a local-only commit is needed in PowerShell
 - Google Drive dev-log mirror:
   - `CODEX_DEV_LOG.md` can be mirrored into `G:\我的云端硬盘\Ashare_backups\codex_dev_log_mirror`
+  - versioned script snapshots now live under `G:\我的云端硬盘\Ashare_backups\script_versions`
+  - snapshot catalog now lives at `G:\我的云端硬盘\Ashare_backups\VERSION_CATALOG.md`
+  - current naming scheme:
+    - `LEGACY-YYYYMMDD-RNNN` for milestone / layout-transition snapshots
+    - `SCRIPT-YYYYMMDD-RNNN` for script-only repo snapshots without `data/`, `outputs/`, virtualenvs, caches, or private `local_settings.py`
   - watcher script: `F:\quant_data\Ashare\scripts\sync_codex_dev_log_to_gdrive.py`
   - start script: `F:\quant_data\Ashare\scripts\start_codex_dev_log_sync.ps1`
   - stop script: `F:\quant_data\Ashare\scripts\stop_codex_dev_log_sync.ps1`
@@ -46,15 +52,55 @@
   - `C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe`
 - Canonical Gmtrade Python:
   - `F:\quant_data\Ashare\venvs\gmtrade39\Scripts\python.exe`
+- Current execution default:
+  - account mode: `precision`
+  - precision trade switch: `False`
+  - operator implication: the clock service now stays online by default but only writes heartbeat/gate logs unless the precision-trade switch is explicitly turned on
+- Precision-style split:
+  - `research_only` runs the research chain and publishes a portfolio release without directly calling the execution bridge.
+  - `release_only` republishes the latest `portfolio_recommendation.json` and `target_positions.csv` into the formal release layer.
+  - `execution_only` reads the latest published release, applies trading-clock gates, and only then calls the gmtrade bridge.
+  - `trade_clock_service.py` is the lightweight always-on trigger process that watches time and release state, then dispatches `execution_only` at the configured window.
+- Trade clock runtime:
+  - release root: `F:\quant_data\Ashare\data\trade_release_v1`
+  - clock state root: `F:\quant_data\Ashare\data\trade_clock`
+  - latest release pointer: `F:\quant_data\Ashare\data\trade_release_v1\latest_release.json`
+  - latest clock heartbeat: `F:\quant_data\Ashare\data\trade_clock\clock_state.json`
+  - autostart task name: `Ashare Trade Clock`
+  - autostart scripts:
+    - install: `F:\quant_data\Ashare\scripts\install_trade_clock_autostart.ps1`
+    - remove: `F:\quant_data\Ashare\scripts\remove_trade_clock_autostart.ps1`
+    - start now: `F:\quant_data\Ashare\scripts\start_trade_clock.ps1`
+    - stop now: `F:\quant_data\Ashare\scripts\stop_trade_clock.ps1`
 - Current recommended commands:
   - `python F:\quant_data\Ashare\launch_canonical.py`
   - `python F:\quant_data\Ashare\launch_canonical.py --profile overnight`
   - `python F:\quant_data\Ashare\launch_canonical.py --profile quick_test`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode resume_downstream --profile quick_test`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode research_only --profile quick_test`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode release_only --profile quick_test`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --gate-only`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --execution-mode simulation --gate-only`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --execution-mode precision --precision-trade off --gate-only`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --execution-mode precision --precision-trade on`
+  - `python F:\quant_data\Ashare\trade_clock_service.py --profile quick_test --once`
 - Runtime transparency:
   - `main_research_runner.py` now prints a stage preview before dispatch.
   - `supervisor_state.json` is updated incrementally during integrated runs instead of only at the end.
   - `supervisor_state.json` now carries `current_stage`, `stages`, and `stage_history` for operator inspection.
+  - `supervisor_state.json` now also carries recent `runtime_notes` for selected long stages.
+  - V6 now emits additive sidecar artifacts for `announcement_evidence_cards.json` and `manual_review_queue.json`.
+  - V5 completion can now emit `latest_v5_cycle_review.json` as a local post-cycle review.
+  - execution runs now emit a portfolio-control audit layer with `position_state_before/after_plan/after_execution`, `rebalance_audit.json`, and `execution_feedback.json`.
+  - the execution layer can now refresh a dedicated `Latest Live Portfolio Snapshot` block inside this dev log after successful bridge runs.
+- Local Ollama split:
+  - strict local event extraction stays on `qwen2.5:7b`
+  - local research fallback chain is now `deepseek-r1:14b -> qwen2.5:7b`
+  - local announcement evidence-card generation and V5 cycle review use `deepseek-r1:14b` by default
+  - local manual-review routing and runtime stage explainer use `qwen2.5:7b` by default
+- Portfolio control V1:
+  - current low-risk scope is `ledger + drift threshold + daily turnover budget + execution feedback + dev-log portfolio snapshot`
+  - industry/theme exposure and staged build/reduce are intentionally deferred for now
 - Latest confirmed milestone:
   - V6 research plan generation confirmed on `2026-03-21 14:09:34`
   - quick_test V5 cycle observed generating new candidates on `2026-03-21 14:39:15`
@@ -64,8 +110,34 @@
   - old V6 readmes pointing to `run_v6_full_cycle_real.py` are stale
   - this log is the current source of truth
 
+## Latest Live Portfolio Snapshot
+<!-- LIVE_PORTFOLIO_SNAPSHOT_START -->
+- Updated at: `20260321_153949`
+- Source report: `F:\quant_data\Ashare\data\live_execution_bridge\execution_report_20260321_153949.json`
+- Account: `4d74...2aa6`
+- NAV: `993074.5520`
+- Cash: `310974.5460`
+- Positions: `10`
+- Target names: `15`
+- Orders/Fills: `24` / `0`
+- Turnover raw/final: `0.9602` / `0.2490`
+- Drift skipped: `0`
+- Turnover adjustments: `21`
+- Execution status summary: `success=0 partial=0 failed=24 skipped=21`
+- Top holdings:
+- `688280.SH`: weight=0.0785, shares=7700, price=10.1300
+- `688005.SH`: weight=0.0785, shares=2600, price=29.9700
+- `688549.SH`: weight=0.0781, shares=8500, price=9.1200
+- `688323.SH`: weight=0.0779, shares=3900, price=19.8300
+- `688728.SH`: weight=0.0776, shares=5700, price=13.5200
+- `688596.SH`: weight=0.0770, shares=2600, price=29.4200
+- `688172.SH`: weight=0.0744, shares=1600, price=46.1500
+- `688981.SH`: weight=0.0720, shares=700, price=102.1800
+<!-- LIVE_PORTFOLIO_SNAPSHOT_END -->
+
 ## Session Start Checklist
-- Read `Latest Stable Snapshot`, `Known Dangerous Operations`, and `Known Issues` before touching code.
+- Read `Latest Stable Snapshot`, `Latest Live Portfolio Snapshot`, `Known Dangerous Operations`, and `Known Issues` before touching code.
+- If the task touches precise-style execution, also inspect `data\trade_release_v1\latest_release.json` and `data\trade_clock\clock_state.json` first.
 - Confirm whether the user has explicitly allowed any long-running integrated run in the current session.
 - Use `launch_canonical.py` plus the documented profile for formal operator runs.
 - Use `main_research_runner.py` when you need to inspect or reason about the wrapped business chain directly.
@@ -92,6 +164,9 @@
 - Do not treat `quick_test` as a seconds-level smoke test; it is still a real integrated run.
 - Do not use `--resume-execution` casually after a prior bridge run; it can replay simulated orders on refreshed portfolio files.
 - Do not treat the whole `outputs\` tree as canonical; only `outputs\canonical_runs` is the formal wrapper trace root unless another local marker says otherwise.
+- Do not treat `integrated_supervisor` as the formal precise-trading path; it remains mainly a debug/integration mode.
+- Do not use `--ignore-window` on `execution_only` unless the user explicitly wants to bypass the market-time gate.
+- Do not let `trade_clock_service.py` and a manual `execution_only` call fight over the same release/window without checking `data\trade_clock\clock_state.json` first.
 
 ## Project Overview
 - This is a complex medium-sized A-share research and execution system, not a small script project.
@@ -177,9 +252,22 @@
     - `target_positions.csv`
     - `rebalance_orders.csv`
   - It consumes both V5 outputs and the latest market snapshot files, and also reads `performance_feedback.json` for posture overrides.
+- Release layer:
+  - `hub_v6/portfolio_release.py` is the new middle layer between research and execution.
+  - It reads the latest portfolio recommendation artifacts and publishes a versioned release under `data\trade_release_v1\releases\<release_id>\`.
+  - It also maintains:
+    - `latest_release.json`
+    - `latest\release_manifest.json`
+    - `latest\target_positions.csv`
+- Precision execution gate:
+  - `hub_v6/execution_manager.py` owns `execution_only`.
+  - It reads the published release, checks trading day plus execution window, and only then dispatches the execution bridge.
+  - `hub_v6/trading_clock.py` owns A-share clock windows and the cached trade-calendar check.
+  - `hub_v6/clock_supervisor.py` is the lightweight heartbeat loop used by `trade_clock_service.py`.
 - Execution layer:
   - `live_execution_bridge/runtime.py` is the execution runtime entry used by the supervisor.
   - `live_execution_bridge/rebalance.py` converts target holdings and current account state into order intents.
+  - `live_execution_bridge/portfolio_control.py` now provides the low-risk control layer for unified position state, drift thresholding, turnover budgeting, and normalized execution feedback.
   - `live_execution_bridge/brokers/gmtrade_sim_broker.py` is the real gmtrade simulation adapter currently in use.
   - The execution layer consumes `target_positions.csv` and price snapshots, then writes:
     - `execution_report_*.json`
@@ -204,15 +292,28 @@
 | Artifact | Producer | Consumer | Path | Format | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `supervisor_state.json` | integrated supervisor | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\supervisor\supervisor_state.json` | JSON | first stop for top-level step status; now includes `current_stage`, `stages`, and `stage_history` during runtime |
+| `runtime_stage_notes.json` | supervisor local explainer sidecar | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\supervisor\runtime_stage_notes.json` | JSON | rolling operator notes for selected long stages with suggested watch files |
 | `market_pipeline_report.json` | market pipeline | operator / debugging | `F:\quant_data\Ashare\data\daily_cache_v6\market_pipeline_report.json` | JSON | shows data sync and train append status |
 | `research_context_pack.json` | context pack builder | research brief engine / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\context_pack\research_context_pack.json` | JSON | full evidence pack |
+| `announcement_evidence_cards.json` | V6 additive local evidence-card sidecar | research brief engine / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\evidence_cards\announcement_evidence_cards.json` | JSON | compact high-value announcement evidence cards; additive only |
 | `research_brief.json` | V6 research planner | V5 bridge / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\briefs\research_brief.json` | JSON | core planning artifact |
+| `manual_review_queue.json` | event-extract local review-router sidecar | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\extract_summary\manual_review_queue.json` | JSON | compact queue of events worth manual review; additive only |
 | `run_manifest.json` | formal governance wrapper | operator / debugging | `F:\quant_data\Ashare\outputs\canonical_runs\<run_id>\run_manifest.json` | JSON | run id, operator entry, runtime root, mode/profile, and trace metadata |
 | `candidate_override.json` | V5 bridge | V5.1 runtime | `F:\quant_data\Ashare\data\event_lake_v6\bridge\candidate_override.json` | JSON | tells V5 what routes, models, labels to favor |
+| `latest_v5_cycle_review.json` | supervisor local V5 review sidecar | operator / debugging | `F:\quant_data\Ashare\data\research_hub_v5_1_gpu_integrated\reviews\latest_v5_cycle_review.json` | JSON | concise local review over latest completed V5 cycle; additive only |
 | `portfolio_recommendation.json` | portfolio recommendation layer | operator / execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_recommendation.json` | JSON | summary of selected strategy and portfolio state |
 | `target_positions.csv` | portfolio recommendation layer | Gmtrade execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\target_positions.csv` | CSV | target holdings with price fields |
 | `rebalance_orders.csv` | portfolio recommendation layer | operator / execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\rebalance_orders.csv` | CSV | delta orders relative to prior holdings |
+| `latest_release.json` | portfolio release layer | execution gate / trade clock / operator | `F:\quant_data\Ashare\data\trade_release_v1\latest_release.json` | JSON | pointer to the current formal release |
+| `release_manifest.json` | portfolio release layer | execution gate / operator | `F:\quant_data\Ashare\data\trade_release_v1\releases\<release_id>\release_manifest.json` | JSON | versioned trade-date-scoped release contract between research and execution |
+| `clock_state.json` | trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\clock_state.json` | JSON | heartbeat, gate status, active window, and last dispatch state |
+| `latest_execution_dispatch.json` | execution gate / trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\latest_execution_dispatch.json` | JSON | latest release-triggered execution dispatch outcome |
 | `execution_report_*.json` | Gmtrade execution bridge | operator / supervisor feedback | `F:\quant_data\Ashare\data\live_execution_bridge\execution_report_*.json` | JSON | execution summary per run |
+| `position_state_before.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_before.json` | JSON | planned-trade ledger snapshot before controls are applied |
+| `position_state_after_plan.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_after_plan.json` | JSON | target vs actual vs pending plan after drift/budget controls |
+| `position_state_after_execution.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_after_execution.json` | JSON | actual vs target vs unfinished-order pending effect after execution |
+| `rebalance_audit.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\rebalance_audit.json` | JSON | explains drift skips, turnover truncation, and final control decisions |
+| `execution_feedback.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\execution_feedback.json` | JSON | normalizes planned/submitted/filled/skipped order outcomes |
 | `equity_curve.csv` | Gmtrade execution bridge | supervisor feedback | `F:\quant_data\Ashare\data\live_execution_bridge\equity_curve.csv` | CSV | feeds daily performance feedback |
 | `performance_feedback.json` | supervisor | candidate factory / portfolio recommendation / operator | `F:\quant_data\Ashare\data\event_lake_v6\bridge\performance_feedback.json` | JSON | next-day regime and route bias feedback |
 
@@ -224,10 +325,30 @@
 | `OVERNIGHT_V5_GPU_MAX_CYCLES_PER_TICK` | `hub_v6/local_settings.py` | `8` | controls overnight runtime and research depth |
 | `QUICK_TEST_V5_GPU_MAX_CYCLES_PER_TICK` | `hub_v6/local_settings.py` | `1` | controls quick_test runtime and debugging speed |
 | `ENABLE_EXECUTION_BRIDGE` | `hub_v6/local_settings.py` | `True` | determines whether simulated execution runs after portfolio generation |
+| `ENABLE_PORTFOLIO_CONTROL` | `hub_v6/local_settings.py` | `True` | enables the low-risk portfolio control audit and constraint layer inside execution |
+| `PORTFOLIO_CONTROL_DRIFT_THRESHOLD` | `hub_v6/local_settings.py` | `0.005` | small weight gaps below this threshold are skipped instead of traded |
+| `PORTFOLIO_CONTROL_MAX_DAILY_TURNOVER_RATIO` | `hub_v6/local_settings.py` | `0.25` | caps planned daily turnover and truncates lower-priority orders when exceeded |
+| `PORTFOLIO_CONTROL_ENABLE_EXECUTION_FEEDBACK` | `hub_v6/local_settings.py` | `True` | writes normalized planned/submitted/filled/skipped execution feedback |
+| `PORTFOLIO_CONTROL_ENABLE_DEV_LOG_SNAPSHOT` | `hub_v6/local_settings.py` | `True` | refreshes the live portfolio snapshot block inside `CODEX_DEV_LOG.md` after execution |
+| `PORTFOLIO_CONTROL_DEV_LOG_TOP_HOLDINGS` | `hub_v6/local_settings.py` | `8` | controls how many top holdings are written into the dev-log snapshot |
+| `PORTFOLIO_CONTROL_ALLOW_ODD_LOT_EXIT` | `hub_v6/local_settings.py` | `True` | allows cleanup of residual odd-lot sell quantities in the control layer |
+| `EXECUTION_ACCOUNT_MODE` | `hub_v6/local_settings.py` | `precision` | selects which gmtrade account profile is active by default: `simulation` or `precision` |
+| `PRECISION_TRADE_ENABLED` | `hub_v6/local_settings.py` | `False` | when `False`, precision mode still refreshes heartbeat/gate logs but refuses to call the execution bridge |
+| `ALLOW_INTEGRATED_PRECISION_EXECUTION` | `hub_v6/local_settings.py` | `False` | keeps `integrated_supervisor` and `resume_downstream` from directly executing against the precision account unless explicitly allowed |
+| `ENABLE_TRADE_RELEASE` | `hub_v6/local_settings.py` | `True` | turns the middle release layer on after research-side portfolio generation |
+| `TRADE_RELEASE_VALID_AFTER_TIME` / `TRADE_RELEASE_EXPIRES_AT_TIME` | `hub_v6/local_settings.py` | `09:30:30 / 15:00:00` | defines the default release validity window consumed by `execution_only` |
+| `ENABLE_TRADE_CLOCK` | `hub_v6/local_settings.py` | `True` | enables the lightweight always-on clock-service path |
+| `TRADE_CLOCK_POLL_SECONDS` | `hub_v6/local_settings.py` | `30` | controls the sleeping heartbeat interval of the clock supervisor |
+| `TRADE_CLOCK_EXECUTION_WINDOWS` | `hub_v6/local_settings.py` | `[{label=morning_primary,start=09:30:30,end=10:00:00}]` | defines the only windows in which `execution_only` may auto-dispatch |
 | `ENABLE_DAILY_STRATEGY_FEEDBACK` | `hub_v6/local_settings.py` | `True` | determines whether prior-day performance changes route and portfolio posture |
 | `ENABLE_TUSHARE_NEWS` / `ENABLE_TUSHARE_MAJOR_NEWS` | `hub_v6/local_settings.py` | `True / True` | enables Tushare message-layer inputs |
 | `TUSHARE_NEWS_MAX_SOURCES_PER_RUN` | `hub_v6/local_settings.py` | `1` | affects short-news breadth vs quota safety |
 | `TUSHARE_MAJOR_NEWS_MAX_SOURCES_PER_RUN` | `hub_v6/local_settings.py` | `3` | affects major-news breadth vs quota safety |
+| `OLLAMA_EVENT_EXTRACT_MODEL` / `OLLAMA_RESEARCH_MODEL` | `hub_v6/local_settings.py` | `qwen2.5:7b / deepseek-r1:14b` | splits strict event extraction from local research fallback |
+| `OLLAMA_EVIDENCE_CARD_*` | `hub_v6/local_settings.py` | `enabled / deepseek-r1:14b / 180s / 2 items` | controls additive announcement evidence-card generation |
+| `OLLAMA_REVIEW_ROUTER_*` | `hub_v6/local_settings.py` | `enabled / qwen2.5:7b / 90s / 6 items` | controls additive manual-review queue routing |
+| `OLLAMA_RUNTIME_EXPLAINER_*` | `hub_v6/local_settings.py` | `enabled / qwen2.5:7b / 45s` | controls long-stage operator notes and watch-file hints |
+| `OLLAMA_V5_REVIEW_*` | `hub_v6/local_settings.py` | `enabled / deepseek-r1:14b / 180s` | controls additive V5 post-cycle local review |
 | `V5_PROJECT_ROOT` | `hub_v6/local_settings.py` | `F:\quant_data\Ashare\quant_research_hub_v5_1_gpu_integrated` | legacy-named metadata field passed into V5 config; not the actual script launch path |
 | `V5_HUB_OUTPUT_ROOT` | `hub_v6/local_settings.py` | `F:\quant_data\Ashare\data\research_hub_v5_1_gpu_integrated` | current V5 output root consumed by registry, cycle summaries, and portfolio recommendation |
 
@@ -235,8 +356,17 @@
 - OpenAI upstream network resets can still happen occasionally; the client now retries transient failures and auto-drops unsupported `reasoning.effort`.
 - Tushare news can still return zero rows when upstream quota is exhausted even after local quota guarding.
 - V5.1 runtime exposes sparse heartbeat artifacts while a cycle is running; operators often need to infer progress from candidate file timestamps.
+- The new local evidence-card, review-router, runtime-explainer, and V5-review layers are additive sidecars; if local Ollama is unavailable, they now fail fast and their artifacts can be empty or stale without blocking the main chain.
+- Portfolio control V1 is still intentionally narrow: no industry/theme exposure cap, no staged entry/exit state machine, and no full OMS lifecycle.
+- The dev-log live portfolio snapshot is refreshed only by execution runs; if execution is disabled or skipped, that section can lag behind the latest research-side target portfolio.
+- `trade_clock_service.py` is implemented as a user-session process plus a Windows logon task, not a native Windows service.
+- The trading-day check depends on the cached `trading_calendar_a_share.csv` file plus Tushare refresh; if both are unavailable, the clock gate will block rather than guess a holiday schedule.
+- There is no code-level guarantee against third-party security software terminating the clock process; the current mitigation is low resource usage plus scheduled-task restart on next logon/failure.
+- The active precision/simulation account mapping currently lives in `configs\gmtrade_runtime_config.local.json`; if that file is changed manually, make sure the `account_profiles` block stays aligned with `EXECUTION_ACCOUNT_MODE`.
 - `hub_v6/local_settings.py` still contains legacy V5 naming such as `V5_PROJECT_ROOT`, which can mislead readers into thinking a root-level package is launched directly.
 - The actual V5 launcher path is package-local `...\v5_gpu_runtime\run_research_hub_v5_1_local.py`; treat `project_root` inside V5 JSON as required config metadata, not launch-path truth.
+- `deepseek-r1:14b` is currently configured only as a local research fallback model, not as the default title-extraction worker; strict event JSON extraction still stays on `qwen2.5:7b` until dedicated validation proves otherwise.
+- `runtime_stage_notes.json` only covers selected long stages by default (`v6_planning`, `v5_gpu`, `portfolio_recommendation`, `execution_bridge`), not every short stage.
 
 ## Deferred Work
 - Improve multi-source news coverage beyond Tushare quota limits.
@@ -276,6 +406,10 @@
   - Reason: V5 can finish successfully while portfolio recommendation or execution fails later; rerunning the whole chain is wasteful.
   - Alternatives considered: keep manual ad hoc Python snippets for recovery.
   - Consequence: `resume_downstream` is now an operator-facing mode in `main_research_runner.py`.
+- Decision: precise-style operation is now split into `research_only -> release layer -> execution_only`.
+  - Reason: the integrated chain is too heavy and too timing-sensitive to be the formal precise-trading path.
+  - Alternatives considered: keep one giant integrated supervisor as both research engine and time-gated execution manager.
+  - Consequence: future precise trading should treat portfolio releases as the contract boundary between research and execution.
 
 ## What To Inspect After A Run
 - Supervisor state:
@@ -923,3 +1057,322 @@ All timestamps below are local file write times in the current workspace and sho
   - Documentation only.
 - Rollback:
   - Remove `README.md` and this log entry if a root collaborator-facing readme is no longer desired.
+
+### 2026-03-22 00:19
+- Type:
+  - `ops`
+- Scope:
+  - `runtime`
+  - `local_llm`
+- Files:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\json_parse_utils.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\llm_router.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_ollama_worker.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\event_extract.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Split the local Ollama runtime into two explicit roles: a strict event-extraction model path and a separate local research fallback path.
+  - Kept local event extraction on `qwen2.5:7b`, and configured the local research fallback chain as `deepseek-r1:14b` first with `qwen2.5:7b` behind it.
+  - Added a loose JSON-object parser so local Ollama responses can still be accepted when they wrap a valid JSON object with extra text or markdown fences.
+  - Updated event-extract logging and summary output so operators can see which local extraction model was used.
+- Impact:
+  - The local 14B model is now integrated into the V6 local research fallback path without disturbing the stricter event-extract worker path.
+  - Local Ollama parsing is more tolerant of verbose or fenced responses, reducing brittle failures when a model includes extra wrapper text around JSON.
+  - No supervisor flow, V5 main chain, or cloud-provider priority order was changed.
+- Validation:
+  - Lightweight static validation only.
+  - `python -m py_compile` on touched Python files.
+  - `python tools\preflight_check.py --profile quick_test --mode integrated_supervisor`
+  - targeted config inspection of the generated `local_ollama` runtime section.
+  - No full integrated runtime was executed.
+- Compatibility:
+  - Backward compatible.
+  - Legacy `OLLAMA_MODEL` / `OLLAMA_TIMEOUT_SECONDS` remain as fallback defaults if the dedicated split settings are absent.
+- Rollback:
+  - Remove the dedicated `OLLAMA_EVENT_*` / `OLLAMA_RESEARCH_*` settings, revert `config_builder.py`, `event_extract.py`, and the loose local JSON parsing helpers if the split local-model strategy is not wanted.
+
+### 2026-03-22 00:33
+- Type:
+  - `ops`
+- Scope:
+  - `runtime`
+  - `observability`
+  - `local_llm`
+- Files:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_augmentations.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\context_pack.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\research_brief_engine.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\orchestrator_v6.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\supervisor.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added `local_augmentations.py` as an additive sidecar layer for four local-Ollama tasks: announcement evidence cards, manual-review queue routing, long-stage runtime notes, and V5 post-cycle review.
+  - Added a short cached Ollama health check inside the sidecar layer so these augmentations skip quickly when the local service is unavailable instead of waiting for full per-role timeouts.
+  - Wired V6 ingest to generate `announcement_evidence_cards.json` from high-value announcements, then merge compact evidence cards into the research context pack before brief generation.
+  - Wired V6 extract to generate `manual_review_queue.json` and print queue summary output so the operator can see how many items need manual attention.
+  - Wired `supervisor.py` to emit `runtime_stage_notes.json` plus terminal hints at selected long stages, and to generate `latest_v5_cycle_review.json` after a successful V5 run without changing the V5 control flow.
+  - Added explicit local-Ollama role configs for evidence-card, review-router, runtime-explainer, and V5-review tasks.
+- Impact:
+  - The local 14B model now has two higher-value sidecar jobs beyond research fallback: announcement evidence-card generation and V5 cycle review.
+  - The local 7B model now has two lighter operator-support jobs: manual-review routing and long-stage runtime explanations.
+  - Runtime transparency is improved through extra terminal output, supervisor state notes, and additive JSON sidecar artifacts.
+  - No portfolio decision rule, execution rule, import tree, or main stage order was rewritten.
+- Validation:
+  - Lightweight validation only.
+  - `python -m py_compile` on touched V6 modules and `local_augmentations.py`.
+  - `python tools\preflight_check.py --profile quick_test --mode integrated_supervisor`
+  - No full integrated runtime was executed.
+- Compatibility:
+  - Backward compatible.
+  - All new local-Ollama features are best-effort sidecars and should not block the main chain if local inference fails.
+- Rollback:
+  - Remove `local_augmentations.py`, remove the additive calls from `orchestrator_v6.py` and `supervisor.py`, and remove the new role-specific local-Ollama config keys if the sidecar enhancement layer is not wanted.
+
+### 2026-03-22 00:43
+- Type:
+  - `ops`
+- Scope:
+  - `backup`
+  - `versioning`
+- Files:
+  - `G:\我的云端硬盘\Ashare_backups\script_versions\Ashare_script_20260322_r001_pre_big_update`
+  - `G:\我的云端硬盘\Ashare_backups\VERSION_CATALOG.md`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Created a new Google Drive script snapshot version `SCRIPT-20260322-R001` before the next planned large update.
+  - Stored the snapshot under `G:\我的云端硬盘\Ashare_backups\script_versions\Ashare_script_20260322_r001_pre_big_update` without modifying the existing legacy backup folder.
+  - Added a catalog file at `G:\我的云端硬盘\Ashare_backups\VERSION_CATALOG.md` to classify the existing pre-restructure snapshot as legacy and the new one as the active script snapshot.
+  - Packed three recovery layers into the new version folder:
+    - `repo_scripts\` for direct file browsing
+    - `manifest\repo_history.bundle` for committed git history
+    - `manifest\working_tree.patch` for the exact uncommitted delta on top of git head `0488e87`
+  - Excluded `data/`, `outputs/`, `.git/`, virtualenvs, caches, and private `local_settings.py` from the copied script snapshot.
+- Impact:
+  - There is now a frozen, non-overwriting pre-big-update script backup in Google Drive that can be restored either as plain files or through git history plus patch.
+  - Sensitive local runtime settings were intentionally kept out of the copied script tree.
+- Validation:
+  - Confirmed the new version folder and manifest files exist.
+  - Confirmed key operator files such as `launch_canonical.py`, `main_research_runner.py`, `tools\preflight_check.py`, and `hub_v6\local_augmentations.py` exist inside the snapshot.
+  - Confirmed `local_settings.py` does not exist inside the copied `repo_scripts\` tree.
+- Compatibility:
+  - Additive only.
+  - Existing Google Drive backup folders were left untouched.
+- Rollback:
+  - Delete `G:\我的云端硬盘\Ashare_backups\script_versions\Ashare_script_20260322_r001_pre_big_update` and remove the matching catalog entry if this snapshot should not be kept.
+
+### 2026-03-22 01:12
+- Type:
+  - `ops`
+- Scope:
+  - `execution`
+  - `portfolio_control`
+  - `observability`
+- Files:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\portfolio_control.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\dev_log_snapshot.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\runtime.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\brokers\gmtrade_sim_broker.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\supervisor.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\gmtrade_runtime_config.example.json`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\gmtrade_runtime_config.local.json`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added a low-risk portfolio control V1 layer inside the execution bridge instead of introducing a separate OMS.
+  - Current scope is deliberately limited to:
+    - unified position-state ledger
+    - drift-threshold rebalance suppression
+    - daily turnover budgeting with truncation
+    - normalized execution feedback
+    - dev-log live portfolio snapshot refresh
+  - Execution runs now write per-run control artifacts under `data\live_execution_bridge\portfolio_control_runs\<timestamp>\`.
+  - `gmtrade_sim_broker.py` now queries day orders and unfinished orders so execution feedback is based on actual gmtrade order objects rather than only local intent files.
+  - Added a dedicated `Latest Live Portfolio Snapshot` section in the dev log maintenance flow; successful execution runs can refresh only that small block instead of rewriting unrelated log content.
+  - Kept industry/theme exposure and staged entry/exit out of this version on purpose to avoid hardening the downstream chain too early.
+- Impact:
+  - The execution layer is no longer a pure black-box rebalance submitter; it now leaves a stable audit trail for target, actual, pending, and post-execution estimated positions.
+  - Small weight drift can now be skipped, and large one-day target changes can be truncated by turnover budget instead of forcing full turnover in one run.
+  - Future Codex sessions and collaborators can inspect the dev log first and immediately see the latest live holdings snapshot when recent execution data exists.
+- Validation:
+  - `python -m py_compile` on the new control-layer modules plus touched runtime/config files.
+  - `python tools\preflight_check.py --profile quick_test --mode integrated_supervisor`
+  - A targeted dry planning probe using existing `latest_account_state.json` and `target_positions.csv`, which produced:
+    - `n_raw_orders=24`
+    - `n_final_orders=4`
+    - `raw_turnover_ratio≈0.9602`
+    - `final_turnover_ratio≈0.2490`
+  - No live or full integrated runtime was executed in this session.
+- Compatibility:
+  - Backward compatible at the chain level.
+  - The supervisor, portfolio recommendation layer, and gmtrade bridge entrypoints remain unchanged.
+  - New artifacts and report fields are additive.
+- Rollback:
+  - Remove `portfolio_control.py` and `dev_log_snapshot.py`, revert the execution-bridge runtime/broker patches, and delete the new `portfolio_control` config section if the V1 control layer is not wanted.
+
+### 2026-03-22 02:00
+- Type:
+  - `architecture`
+- Scope:
+  - `research_execution_split`
+  - `release_layer`
+  - `trade_clock`
+- Files:
+  - `F:\quant_data\Ashare\main_research_runner.py`
+  - `F:\quant_data\Ashare\launch_canonical.py`
+  - `F:\quant_data\Ashare\trade_clock_service.py`
+  - `F:\quant_data\Ashare\RUN_PROFILES.yaml`
+  - `F:\quant_data\Ashare\SYSTEM_MANIFEST.yaml`
+  - `F:\quant_data\Ashare\PROJECT_LAW.md`
+  - `F:\quant_data\Ashare\CHANGELOG_CANONICAL.md`
+  - `F:\quant_data\Ashare\README.md`
+  - `F:\quant_data\Ashare\scripts\start_trade_clock.ps1`
+  - `F:\quant_data\Ashare\scripts\stop_trade_clock.ps1`
+  - `F:\quant_data\Ashare\scripts\install_trade_clock_autostart.ps1`
+  - `F:\quant_data\Ashare\scripts\remove_trade_clock_autostart.ps1`
+  - `F:\quant_data\Ashare\tools\preflight_check.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\supervisor.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_release.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\trading_clock.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_manager.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_bridge_runner.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\runtime.py`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added three additive precise-style modes:
+    - `research_only`
+    - `release_only`
+    - `execution_only`
+  - Added a formal portfolio release layer that versions `portfolio_recommendation.json` and `target_positions.csv` into `data\trade_release_v1\releases\<release_id>\`.
+  - Added a lightweight trade clock that watches trading day plus execution windows and triggers execution from the published release instead of from the live research chain.
+  - Added a root-level `trade_clock_service.py` plus Windows start/stop/install/remove scripts.
+  - Installed the Windows logon scheduled task `Ashare Trade Clock` and started the clock process in the current session.
+- Impact:
+  - Research production and execution timing are now separated by a physical file contract instead of a single heavy integrated run.
+- The execution side now knows:
+  - which account mode is active (`simulation` or `precision`)
+  - whether precision execution is globally enabled for this run
+  - whether a release exists
+  - what trade date it belongs to
+  - whether the current time is inside the configured execution window
+  - The always-on process is intentionally thin: heartbeat plus gate check only, no heavy research work.
+- Validation:
+  - `python -m py_compile` on all new root/runtime modules and touched wrappers.
+  - `python tools\preflight_check.py --profile quick_test --mode research_only`
+  - `python tools\preflight_check.py --profile quick_test --mode execution_only`
+  - `python launch_canonical.py --preflight-only --profile quick_test --mode research_only`
+  - `python launch_canonical.py --preflight-only --profile quick_test --mode execution_only`
+  - `python launch_canonical.py --profile quick_test --mode release_only --skip-preflight`
+  - `python launch_canonical.py --profile quick_test --mode execution_only --gate-only --skip-preflight`
+  - `python trade_clock_service.py --profile quick_test --once --skip-preflight`
+  - `powershell -ExecutionPolicy Bypass -File scripts\start_trade_clock.ps1 -Profile quick_test`
+  - `powershell -ExecutionPolicy Bypass -File scripts\stop_trade_clock.ps1`
+  - `powershell -ExecutionPolicy Bypass -File scripts\install_trade_clock_autostart.ps1`
+  - `schtasks /Query /TN "Ashare Trade Clock"`
+  - No full integrated pipeline and no real timed execution dispatch were run in this session.
+- Compatibility:
+  - Additive only.
+  - `integrated_supervisor` and `resume_downstream` remain available.
+  - The live research chain, import tree, and gmtrade execution core were not rewritten.
+- Rollback:
+  - Remove the new trade clock scripts and `trade_clock_service.py`.
+  - Remove `portfolio_release.py`, `trading_clock.py`, `execution_manager.py`, `clock_supervisor.py`, and `execution_bridge_runner.py`.
+  - Remove the new modes from `main_research_runner.py`, `launch_canonical.py`, and `RUN_PROFILES.yaml`.
+  - Remove the scheduled task `Ashare Trade Clock` and stop the running clock process.
+
+### 2026-03-22 02:15
+- Type:
+  - `ops`
+- Scope:
+  - `execution_policy`
+  - `account_switching`
+  - `precision_safety_gate`
+- Files:
+  - `F:\quant_data\Ashare\main_research_runner.py`
+  - `F:\quant_data\Ashare\launch_canonical.py`
+  - `F:\quant_data\Ashare\trade_clock_service.py`
+  - `F:\quant_data\Ashare\scripts\start_trade_clock.ps1`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_bridge_runner.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_manager.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_release.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\supervisor.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\gmtrade_runtime_config.local.json`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\gmtrade_runtime_config.example.json`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added a real execution-policy surface with:
+    - `EXECUTION_ACCOUNT_MODE`
+    - `PRECISION_TRADE_ENABLED`
+    - `ALLOW_INTEGRATED_PRECISION_EXECUTION`
+  - Added CLI override entries:
+    - `--execution-mode simulation|precision`
+    - `--precision-trade on|off`
+  - Registered the new precision account profile in the local gmtrade template and kept the simulation profile in place.
+  - Tightened the default local policy to:
+    - `precision`
+    - `precision_trade_enabled = False`
+  - `execution_only` now distinguishes:
+    - simulation mode: release-driven, no trading-time gate
+    - precision mode: trading-time gated, and blocked entirely when precision trade is off
+  - `integrated_supervisor` and `resume_downstream` now skip direct execution against the precision account unless `ALLOW_INTEGRATED_PRECISION_EXECUTION=True`.
+- Impact:
+  - You now have one explicit entry to switch account profiles and one explicit entry to allow or deny precision execution.
+  - The clock service can remain online in precision mode without risking accidental order submission.
+  - Simulation-mode debug behavior stays available without needing to rewrite the execution bridge.
+- Validation:
+  - `python -m py_compile` on all touched wrappers/runtime modules.
+  - `python tools\preflight_check.py --profile quick_test --mode execution_only`
+  - `python launch_canonical.py --preflight-only --profile quick_test --mode execution_only --execution-mode precision --precision-trade off`
+  - `python launch_canonical.py --profile quick_test --mode release_only --skip-preflight --execution-mode precision --precision-trade off`
+  - `python launch_canonical.py --profile quick_test --mode execution_only --gate-only --skip-preflight --execution-mode simulation`
+  - `python launch_canonical.py --profile quick_test --mode execution_only --gate-only --skip-preflight --execution-mode precision --precision-trade off`
+  - `python trade_clock_service.py --profile quick_test --once --skip-preflight --execution-mode precision --precision-trade off`
+  - `powershell -ExecutionPolicy Bypass -File scripts\start_trade_clock.ps1 -Profile quick_test`
+  - Verified `clock_state.json` shows `account_mode=precision`, `precision_trade_enabled=false`, and `reason=precision_trade_disabled`.
+- Compatibility:
+  - Additive at the interface level.
+  - Existing simulation-style runs can still be invoked explicitly through `--execution-mode simulation`.
+- Rollback:
+  - Remove the new execution-policy fields and CLI overrides.
+  - Restore the old single-account broker template if dual-account switching is no longer wanted.
+
+### 2026-03-22 02:20
+- Type:
+  - `backup`
+- Scope:
+  - `gdrive_snapshot`
+- Files:
+  - `G:\我的云端硬盘\Ashare_backups\script_versions\Ashare_script_20260322_r002_precision_clock_split`
+  - `G:\我的云端硬盘\Ashare_backups\VERSION_CATALOG.md`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Created a new frozen script snapshot version `SCRIPT-20260322-R002`.
+  - Stored it under `script_versions\Ashare_script_20260322_r002_precision_clock_split`.
+  - Included:
+    - `repo_scripts\`
+    - `manifest\repo_history.bundle`
+    - `manifest\working_tree.patch`
+    - `manifest\snapshot_manifest.json`
+    - `manifest\git_status.txt`
+    - `manifest\git_diff_stat.txt`
+- Impact:
+  - There is now a restorable pre-github-update snapshot covering the precise clock split and dual-account execution-policy changes.
+- Validation:
+  - Confirmed the new snapshot folder exists and the catalog entry was appended.
+- Compatibility:
+  - Additive only.
+- Rollback:
+  - Delete the `SCRIPT-20260322-R002` folder and remove its catalog row if the snapshot should not be kept.

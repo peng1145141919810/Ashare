@@ -64,15 +64,36 @@ def _compact_event(item: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _compact_evidence_card(item: Dict[str, Any]) -> Dict[str, Any]:
+    """压缩公告证据卡，避免把长文本直接塞给研究脑。"""
+    return {
+        "title": _safe_text(item.get("title"))[:120],
+        "publish_time": _safe_text(item.get("publish_time"))[:32],
+        "source_name": _safe_text(item.get("source_name"))[:60],
+        "security_code_hint": _safe_text(item.get("security_code_hint"))[:16],
+        "company_name_hint": _safe_text(item.get("company_name_hint"))[:40],
+        "signal_type": _safe_text(item.get("signal_type"))[:32],
+        "signal_strength": _safe_text(item.get("signal_strength"))[:16],
+        "impact_scope": _safe_text(item.get("impact_scope"))[:20],
+        "impact_horizon": _safe_text(item.get("impact_horizon"))[:20],
+        "key_points": [_safe_text(x)[:120] for x in list(item.get("key_points", []) or [])[:4] if _safe_text(x)],
+        "research_angles": [_safe_text(x)[:120] for x in list(item.get("research_angles", []) or [])[:4] if _safe_text(x)],
+        "risk_flags": [_safe_text(x)[:120] for x in list(item.get("risk_flags", []) or [])[:4] if _safe_text(x)],
+        "why_relevant": _safe_text(item.get("why_relevant"))[:220],
+    }
+
+
 def build_research_context_pack(
     config: Dict[str, Any],
     structured_events: List[Dict[str, Any]],
     data_gap_report: Dict[str, Any],
+    evidence_cards: List[Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     """构建研究证据包。"""
     max_priority_events = int(config.get("research_context_pack", {}).get("max_priority_events", 30) or 30)
     priority_events = sorted(structured_events, key=_event_sort_key, reverse=True)[:max_priority_events]
     compact_priority_events = [_compact_event(x) for x in priority_events]
+    compact_evidence_cards = [_compact_evidence_card(x) for x in list(evidence_cards or [])[:4] if isinstance(x, dict)]
 
     source_type_counter = Counter(_safe_text(x.get("source_type")) or "unknown" for x in structured_events)
     event_type_counter = Counter(_safe_text(x.get("event_type")) or "其他" for x in structured_events)
@@ -132,6 +153,7 @@ def build_research_context_pack(
         },
         "priority_events": priority_events,
         "compact_priority_events": compact_priority_events,
+        "evidence_cards": compact_evidence_cards,
         "data_gap_report": data_gap_report,
         "market_state": {
             "style_bias": "unknown",
@@ -161,6 +183,7 @@ def save_research_context_pack(config: Dict[str, Any], pack: Dict[str, Any]) -> 
         "event_summary": pack.get("event_summary", {}),
         "message_evidence_profile": pack.get("message_evidence_profile", {}),
         "priority_events": pack.get("compact_priority_events", []),
+        "evidence_cards": pack.get("evidence_cards", []),
         "data_gap_report": pack.get("data_gap_report", {}),
         "market_state": pack.get("market_state", {}),
         "research_space": pack.get("research_space", {}),

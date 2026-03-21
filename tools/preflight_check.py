@@ -64,10 +64,15 @@ def run_preflight(repo_root: Path, profile: str, mode: str, explicit_config: str
     compile_targets = [
         repo_root / "launch_canonical.py",
         repo_root / "main_research_runner.py",
+        repo_root / "trade_clock_service.py",
         repo_root / "tools" / "preflight_check.py",
         runtime_root / "hub_v6" / "local_settings.py",
         runtime_root / "hub_v6" / "config_builder.py",
         runtime_root / "hub_v6" / "supervisor.py",
+        runtime_root / "hub_v6" / "portfolio_release.py",
+        runtime_root / "hub_v6" / "trading_clock.py",
+        runtime_root / "hub_v6" / "execution_manager.py",
+        runtime_root / "hub_v6" / "clock_supervisor.py",
     ]
     for target in compile_targets:
         try:
@@ -77,7 +82,12 @@ def run_preflight(repo_root: Path, profile: str, mode: str, explicit_config: str
             _append_check(checks, f"py_compile:{target.name}", False, str(exc))
 
     sys.path.insert(0, str(runtime_root))
-    import_targets = ["hub_v6.local_settings", "hub_v6.config_builder"]
+    import_targets = [
+        "hub_v6.local_settings",
+        "hub_v6.config_builder",
+        "hub_v6.portfolio_release",
+        "hub_v6.execution_manager",
+    ]
     for target in import_targets:
         try:
             importlib.import_module(target)

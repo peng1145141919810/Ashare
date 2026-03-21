@@ -41,6 +41,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--profile", default="", help="Run profile defined in RUN_PROFILES.yaml")
     parser.add_argument("--config", default="", help="Optional explicit runtime config passed through to main_research_runner.py")
     parser.add_argument("--resume-execution", action="store_true", help="Only applies to resume_downstream")
+    parser.add_argument("--release-id", default="", help="Only applies to execution_only")
+    parser.add_argument("--ignore-window", action="store_true", help="Only applies to execution_only")
+    parser.add_argument("--gate-only", action="store_true", help="Only applies to execution_only")
+    parser.add_argument("--execution-mode", default="", choices=["", "simulation", "precision"], help="Execution account mode override")
+    parser.add_argument("--precision-trade", default="default", choices=["default", "on", "off"], help="Precision-trade switch override")
     parser.add_argument("--skip-preflight", action="store_true", help="Skip lightweight preflight checks")
     parser.add_argument("--preflight-only", action="store_true", help="Run only the lightweight preflight checks")
     return parser.parse_args()
@@ -77,6 +82,16 @@ def _build_command(research_python: str, manifest: Dict[str, Any], args: argpars
         command.extend(["--config", str(Path(args.config).resolve())])
     if args.resume_execution:
         command.append("--resume-execution")
+    if str(args.release_id).strip():
+        command.extend(["--release-id", str(args.release_id).strip()])
+    if args.ignore_window:
+        command.append("--ignore-window")
+    if args.gate_only:
+        command.append("--gate-only")
+    if str(args.execution_mode).strip():
+        command.extend(["--execution-mode", str(args.execution_mode).strip()])
+    if str(args.precision_trade).strip().lower() != "default":
+        command.extend(["--precision-trade", str(args.precision_trade).strip().lower()])
     return command
 
 

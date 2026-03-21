@@ -18,6 +18,9 @@
   },
   "allowed_modes": [
     "integrated_supervisor",
+    "research_only",
+    "release_only",
+    "execution_only",
     "resume_downstream",
     "full_cycle",
     "ingest_only",

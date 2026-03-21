@@ -5,12 +5,32 @@ from pathlib import Path
 from typing import Any, Dict
 from . import local_settings as LS
 
+
+def _dedupe_nonempty(items: list[Any]) -> list[str]:
+    out: list[str] = []
+    for item in items:
+        text = str(item or "").strip()
+        if text and text not in out:
+            out.append(text)
+    return out
+
 def build_runtime_config() -> Dict[str, Any]:
     enabled_sources = []
     if LS.ENABLE_CNINFO or LS.ENABLE_SSE or LS.ENABLE_SZSE:
         enabled_sources.append("announcements")
     if LS.ENABLE_TUSHARE_NEWS or LS.ENABLE_TUSHARE_MAJOR_NEWS:
         enabled_sources.append("news")
+    ollama_event_extract_model = str(getattr(LS, "OLLAMA_EVENT_EXTRACT_MODEL", getattr(LS, "OLLAMA_MODEL", "qwen2.5:7b")) or "qwen2.5:7b")
+    ollama_event_extract_timeout_seconds = int(getattr(LS, "OLLAMA_EVENT_EXTRACT_TIMEOUT_SECONDS", getattr(LS, "OLLAMA_TIMEOUT_SECONDS", 120)) or 120)
+    ollama_research_model = str(getattr(LS, "OLLAMA_RESEARCH_MODEL", ollama_event_extract_model) or ollama_event_extract_model)
+    ollama_research_models = _dedupe_nonempty(
+        [ollama_research_model] + list(getattr(LS, "OLLAMA_RESEARCH_FALLBACK_MODELS", []) or [])
+    ) or [ollama_research_model]
+    ollama_research_timeout_seconds = int(getattr(LS, "OLLAMA_RESEARCH_TIMEOUT_SECONDS", getattr(LS, "OLLAMA_TIMEOUT_SECONDS", 120)) or 120)
+    ollama_evidence_card_model = str(getattr(LS, "OLLAMA_EVIDENCE_CARD_MODEL", ollama_research_model) or ollama_research_model)
+    ollama_review_router_model = str(getattr(LS, "OLLAMA_REVIEW_ROUTER_MODEL", ollama_event_extract_model) or ollama_event_extract_model)
+    ollama_runtime_explainer_model = str(getattr(LS, "OLLAMA_RUNTIME_EXPLAINER_MODEL", ollama_event_extract_model) or ollama_event_extract_model)
+    ollama_v5_review_model = str(getattr(LS, "OLLAMA_V5_REVIEW_MODEL", ollama_research_model) or ollama_research_model)
     return {
         "project_name": "quant_research_hub_v6_lean_portfolio_integrated",
         "project_root": str(LS.PROJECT_ROOT),
@@ -28,6 +48,9 @@ def build_runtime_config() -> Dict[str, Any]:
             "log_root": LS.LOG_ROOT,
             "portfolio_output_root": LS.PORTFOLIO_OUTPUT_ROOT,
             "live_execution_root": LS.LIVE_EXECUTION_ROOT,
+            "trade_release_root": str(getattr(LS, "TRADE_RELEASE_ROOT", Path(LS.LIVE_EXECUTION_ROOT).parents[0] / "trade_release_v1")),
+            "trade_clock_root": str(getattr(LS, "TRADE_CLOCK_ROOT", Path(LS.LIVE_EXECUTION_ROOT).parents[0] / "trade_clock")),
+            "trading_calendar_cache_path": str(getattr(LS, "TRADING_CALENDAR_CACHE_PATH", Path(LS.MARKET_STATE_ROOT) / "trading_calendar_a_share.csv")),
         },
         "providers": {
             "tushare": {
@@ -62,10 +85,27 @@ def build_runtime_config() -> Dict[str, Any]:
         "local_ollama": {
             "research_enabled": LS.ENABLE_LOCAL_OLLAMA_RESEARCH,
             "base_url": LS.OLLAMA_BASE_URL,
-            "model": LS.OLLAMA_MODEL,
-            "research_models": LS.OLLAMA_RESEARCH_FALLBACK_MODELS,
-            "timeout_seconds": LS.OLLAMA_TIMEOUT_SECONDS,
-            "research_timeout_seconds": LS.OLLAMA_RESEARCH_TIMEOUT_SECONDS,
+            "model": ollama_research_model,
+            "research_models": ollama_research_models,
+            "timeout_seconds": ollama_event_extract_timeout_seconds,
+            "research_timeout_seconds": ollama_research_timeout_seconds,
+            "event_extract_model": ollama_event_extract_model,
+            "event_extract_timeout_seconds": ollama_event_extract_timeout_seconds,
+            "evidence_card_enabled": bool(getattr(LS, "ENABLE_LOCAL_OLLAMA_EVIDENCE_CARD", True)),
+            "evidence_card_model": ollama_evidence_card_model,
+            "evidence_card_timeout_seconds": int(getattr(LS, "OLLAMA_EVIDENCE_CARD_TIMEOUT_SECONDS", ollama_research_timeout_seconds) or ollama_research_timeout_seconds),
+            "evidence_card_max_items": int(getattr(LS, "OLLAMA_EVIDENCE_CARD_MAX_ITEMS", 2) or 2),
+            "review_router_enabled": bool(getattr(LS, "ENABLE_LOCAL_OLLAMA_REVIEW_ROUTER", True)),
+            "review_router_model": ollama_review_router_model,
+            "review_router_timeout_seconds": int(getattr(LS, "OLLAMA_REVIEW_ROUTER_TIMEOUT_SECONDS", ollama_event_extract_timeout_seconds) or ollama_event_extract_timeout_seconds),
+            "review_router_max_items": int(getattr(LS, "OLLAMA_REVIEW_ROUTER_MAX_ITEMS", 6) or 6),
+            "runtime_explainer_enabled": bool(getattr(LS, "ENABLE_LOCAL_OLLAMA_RUNTIME_EXPLAINER", True)),
+            "runtime_explainer_model": ollama_runtime_explainer_model,
+            "runtime_explainer_timeout_seconds": int(getattr(LS, "OLLAMA_RUNTIME_EXPLAINER_TIMEOUT_SECONDS", 45) or 45),
+            "runtime_explainer_stages": list(getattr(LS, "OLLAMA_RUNTIME_EXPLAINER_STAGES", ["v6_planning", "v5_gpu", "portfolio_recommendation", "execution_bridge"]) or ["v6_planning", "v5_gpu", "portfolio_recommendation", "execution_bridge"]),
+            "v5_review_enabled": bool(getattr(LS, "ENABLE_LOCAL_OLLAMA_V5_REVIEW", True)),
+            "v5_review_model": ollama_v5_review_model,
+            "v5_review_timeout_seconds": int(getattr(LS, "OLLAMA_V5_REVIEW_TIMEOUT_SECONDS", ollama_research_timeout_seconds) or ollama_research_timeout_seconds),
         },
         "event_ingest": {
             "enabled_sources": enabled_sources,
@@ -132,6 +172,40 @@ def build_runtime_config() -> Dict[str, Any]:
             "single_name_cap": LS.PORTFOLIO_SINGLE_NAME_CAP,
             "total_exposure_cap": LS.PORTFOLIO_TOTAL_EXPOSURE_CAP,
             "simulation_ready_need_gate": LS.PORTFOLIO_SIMULATION_READY_NEED_GATE,
+        },
+        "portfolio_control": {
+            "enabled": bool(getattr(LS, "ENABLE_PORTFOLIO_CONTROL", True)),
+            "drift_threshold": float(getattr(LS, "PORTFOLIO_CONTROL_DRIFT_THRESHOLD", 0.005) or 0.005),
+            "max_daily_turnover_ratio": float(getattr(LS, "PORTFOLIO_CONTROL_MAX_DAILY_TURNOVER_RATIO", 0.25) or 0.25),
+            "enable_execution_feedback": bool(getattr(LS, "PORTFOLIO_CONTROL_ENABLE_EXECUTION_FEEDBACK", True)),
+            "enable_dev_log_snapshot": bool(getattr(LS, "PORTFOLIO_CONTROL_ENABLE_DEV_LOG_SNAPSHOT", True)),
+            "dev_log_top_holdings": int(getattr(LS, "PORTFOLIO_CONTROL_DEV_LOG_TOP_HOLDINGS", 8) or 8),
+            "allow_odd_lot_exit": bool(getattr(LS, "PORTFOLIO_CONTROL_ALLOW_ODD_LOT_EXIT", True)),
+        },
+        "execution_policy": {
+            "account_mode": str(getattr(LS, "EXECUTION_ACCOUNT_MODE", "simulation") or "simulation").strip().lower(),
+            "precision_trade_enabled": bool(getattr(LS, "PRECISION_TRADE_ENABLED", False)),
+            "allow_integrated_precision_execution": bool(getattr(LS, "ALLOW_INTEGRATED_PRECISION_EXECUTION", False)),
+        },
+        "trade_release": {
+            "enabled": bool(getattr(LS, "ENABLE_TRADE_RELEASE", True)),
+            "valid_after_time": str(getattr(LS, "TRADE_RELEASE_VALID_AFTER_TIME", "09:30:30") or "09:30:30"),
+            "expires_at_time": str(getattr(LS, "TRADE_RELEASE_EXPIRES_AT_TIME", "15:00:00") or "15:00:00"),
+            "calendar_lookback_days": int(getattr(LS, "TRADE_RELEASE_CALENDAR_LOOKBACK_DAYS", 7) or 7),
+            "calendar_forward_days": int(getattr(LS, "TRADE_RELEASE_CALENDAR_FORWARD_DAYS", 45) or 45),
+        },
+        "trade_clock": {
+            "enabled": bool(getattr(LS, "ENABLE_TRADE_CLOCK", True)),
+            "timezone": str(getattr(LS, "TRADE_CLOCK_TIMEZONE", "Asia/Shanghai") or "Asia/Shanghai"),
+            "poll_seconds": int(getattr(LS, "TRADE_CLOCK_POLL_SECONDS", 30) or 30),
+            "execution_windows": list(
+                getattr(
+                    LS,
+                    "TRADE_CLOCK_EXECUTION_WINDOWS",
+                    [{"label": "morning_primary", "start": "09:30:30", "end": "10:00:00"}],
+                )
+                or [{"label": "morning_primary", "start": "09:30:30", "end": "10:00:00"}]
+            ),
         },
         "execution_bridge": {
             "enabled": LS.ENABLE_EXECUTION_BRIDGE,

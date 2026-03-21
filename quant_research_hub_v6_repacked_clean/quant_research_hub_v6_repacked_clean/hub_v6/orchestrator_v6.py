@@ -12,6 +12,7 @@ from .data_gap_engine import build_data_gap_report, save_data_gap_report
 from .data_inventory import build_inventory_real, save_inventory
 from .event_extract import extract_events_with_worker, save_event_store
 from .event_ingest import ingest_events_real, refresh_market_basics
+from .local_augmentations import build_announcement_evidence_cards, build_manual_review_queue
 from .logging_utils import log_line
 from .research_brief_engine import build_research_brief, save_research_brief
 from .v5_bridge import build_research_actions, save_bridge_outputs
@@ -42,6 +43,7 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
 
     raw_items = []
     structured_events = []
+    evidence_cards = []
     inventory = {}
     data_gap_report = {}
     context_pack = {}
@@ -54,6 +56,13 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
         log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 基础表刷新与事件抓取开始")
         refresh_market_basics(config=config)
         raw_items = ingest_events_real(config=config)
+        evidence_result = build_announcement_evidence_cards(config=config, raw_items=raw_items)
+        evidence_cards = list(evidence_result.get("cards", []) or [])
+        log_line(
+            config,
+            f"V6: [{stage_idx}/{len(stage_labels)}] 公告证据卡摘要 selected={evidence_result.get('selected_items', 0)} "
+            f"cards={len(evidence_cards)} path={evidence_result.get('path', '')}",
+        )
         log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 基础表刷新与事件抓取完成 raw_items={len(raw_items)} elapsed={perf_counter() - t0:.1f}s")
 
     if mode in {"extract_only", "gap_only", "plan_only", "bridge_only", "full_cycle"}:
@@ -66,6 +75,12 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
             prompt_root=prompt_root,
         )
         save_event_store(config=config, events=structured_events)
+        review_result = build_manual_review_queue(config=config, structured_events=structured_events)
+        log_line(
+            config,
+            f"V6: [{stage_idx}/{len(stage_labels)}] 人工复核队列摘要 queue_size={review_result.get('queue_size', 0)} "
+            f"path={review_result.get('path', '')}",
+        )
         log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 事件抽取完成 structured_events={len(structured_events)} elapsed={perf_counter() - t0:.1f}s")
 
     if mode in {"gap_only", "plan_only", "bridge_only", "full_cycle"}:
@@ -95,8 +110,10 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
             config=config,
             structured_events=structured_events,
             data_gap_report=data_gap_report,
+            evidence_cards=evidence_cards,
         )
         save_research_context_pack(config=config, pack=context_pack)
+        log_line(config, f"V6: 研究证据包已合并公告证据卡 evidence_cards={len(list(context_pack.get('evidence_cards', []) or []))}")
         research_brief = build_research_brief(
             config=config,
             context_pack=context_pack,

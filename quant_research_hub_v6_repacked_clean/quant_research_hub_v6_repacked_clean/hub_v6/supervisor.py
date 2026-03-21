@@ -6,10 +6,17 @@ from pathlib import Path
 from typing import Any, Dict
 import pandas as pd
 from .config_utils import ensure_dir, load_config
+from .execution_bridge_runner import (
+    build_execution_runtime_config as materialize_execution_runtime_config,
+    execution_policy,
+    run_execution_bridge as dispatch_execution_bridge,
+)
+from .local_augmentations import build_v5_cycle_review, emit_runtime_stage_note
 from .logging_utils import log_line
 from .market_pipeline import run_market_pipeline
 from .orchestrator_v6 import run_v6_cycle
 from .portfolio_recommendation import build_portfolio_recommendation
+from .portfolio_release import publish_portfolio_release
 
 
 def _now_text() -> str:
@@ -311,6 +318,11 @@ def _stage_bookkeeping(state: Dict[str, Any], stage_name: str, stage_label: str,
 
 def _stage_start(config: Dict[str, Any], state: Dict[str, Any], stage_name: str, stage_label: str, stage_order: int, stage_total: int) -> None:
     _stage_bookkeeping(state, stage_name, stage_label, stage_order, stage_total, 'running')
+    note = emit_runtime_stage_note(config=config, stage_name=stage_name, stage_label=stage_label, status='running')
+    if note:
+        runtime_notes = list(state.get('runtime_notes', []) or [])
+        runtime_notes.append(note)
+        state['runtime_notes'] = runtime_notes[-20:]
     _write_supervisor_state(config, state)
     log_line(config, f"Supervisor: [{stage_order}/{stage_total}] {stage_label} 开始。")
 
@@ -338,38 +350,58 @@ def _stage_fail(config: Dict[str, Any], state: Dict[str, Any], stage_name: str, 
     _write_supervisor_state(config, state)
     log_line(config, f"Supervisor: [{stage_order}/{stage_total}] {stage_label} 失败。{summary}")
 
+
+def _maybe_publish_release(config: Dict[str, Any], state: Dict[str, Any], source_mode: str) -> None:
+    release_cfg = dict(config.get('trade_release', {}) or {})
+    if not bool(release_cfg.get('enabled', True)):
+        state['portfolio_release_skipped'] = 'disabled'
+        return
+    try:
+        release = publish_portfolio_release(
+            config=config,
+            source_mode=source_mode,
+            profile=str(config.get('runtime_selection', {}).get('profile', '') or ''),
+        )
+        state['portfolio_release'] = {
+            'release_id': str(release.get('release_id', '') or ''),
+            'trade_date': str(release.get('trade_date', '') or ''),
+            'manifest_path': str(release.get('artifacts', {}).get('manifest_path', '') or ''),
+        }
+        log_line(
+            config,
+            (
+                "Supervisor: 已发布 portfolio release "
+                f"release_id={state['portfolio_release'].get('release_id', '')} "
+                f"trade_date={state['portfolio_release'].get('trade_date', '')}"
+            ),
+        )
+    except Exception as exc:
+        state['portfolio_release_error'] = str(exc)
+        log_line(config, f"Supervisor: portfolio release 发布失败：{exc}")
+
+
+def _supervisor_direct_execution_decision(config: Dict[str, Any]) -> Dict[str, Any]:
+    policy = execution_policy(config)
+    if str(policy.get('account_mode', 'simulation')) != 'precision':
+        return {'allowed': True, 'reason': 'simulation_mode'}
+    if not bool(policy.get('precision_trade_enabled', False)):
+        return {'allowed': False, 'reason': 'precision_trade_disabled'}
+    if not bool(policy.get('allow_integrated_precision_execution', False)):
+        return {'allowed': False, 'reason': 'precision_mode_deferred_to_execution_only'}
+    return {'allowed': True, 'reason': 'precision_mode_allowed'}
+
 def _build_execution_runtime_config(config: Dict[str, Any]) -> Path:
-    exec_cfg = dict(config.get('execution_bridge', {}) or {})
-    template_path = Path(str(exec_cfg['config_template_path']))
-    payload = json.loads(template_path.read_text(encoding='utf-8'))
-    payload['portfolio_root'] = str(config['paths'].get('portfolio_output_root', payload.get('portfolio_root', '')))
-    payload['explicit_portfolio_path'] = str(Path(str(config['paths']['portfolio_output_root'])) / 'target_positions.csv')
-    payload['price_snapshot_path'] = str(config.get('market_pipeline', {}).get('price_snapshot_path', payload.get('price_snapshot_path', '')))
-    payload['output_dir'] = str(config['paths'].get('live_execution_root', payload.get('output_dir', '')))
-    out_path = Path(str(exec_cfg['autogen_config_path']))
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
-    return out_path
+    return materialize_execution_runtime_config(
+        config=config,
+        explicit_portfolio_path=str(Path(str(config['paths']['portfolio_output_root'])) / 'target_positions.csv'),
+    )
 
 def _run_execution_bridge(config: Dict[str, Any], project_root: Path) -> Dict[str, Any]:
-    exec_cfg = dict(config.get('execution_bridge', {}) or {})
-    runtime_config_path = _build_execution_runtime_config(config)
-    pyexe = str(exec_cfg['python_executable'])
-    script = Path(str(exec_cfg['script_path']))
-    env = os.environ.copy()
-    proc = subprocess.run(
-        [pyexe, str(script), '--config', str(runtime_config_path)],
-        cwd=str(project_root),
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
+    return dispatch_execution_bridge(
+        config=config,
+        project_root=project_root,
+        explicit_portfolio_path=str(Path(str(config['paths']['portfolio_output_root'])) / 'target_positions.csv'),
     )
-    stdout = (proc.stdout or '').strip()
-    try:
-        return json.loads(stdout) if stdout else {'ok': True, 'stdout': ''}
-    except Exception:
-        return {'ok': True, 'stdout': stdout}
 
 
 def run_resume_downstream(config_path: Path, include_execution: bool = False) -> None:
@@ -383,6 +415,7 @@ def run_resume_downstream(config_path: Path, include_execution: bool = False) ->
         try:
             rec = build_portfolio_recommendation(config=config, bridge_root=Path(str(config['paths']['bridge_root'])))
             state['portfolio_recommendation'] = rec
+            _maybe_publish_release(config=config, state=state, source_mode='resume_downstream')
             _stage_finish(
                 config,
                 state,
@@ -404,10 +437,22 @@ def run_resume_downstream(config_path: Path, include_execution: bool = False) ->
         _stage_start(config, state, 'execution_bridge', '断点续跑执行桥', stage_total, stage_total)
         summary_path = Path(str(config['paths']['portfolio_output_root'])) / 'portfolio_recommendation.json'
         should_trade = True
+        direct_exec = _supervisor_direct_execution_decision(config)
         if summary_path.exists():
             summary = json.loads(summary_path.read_text(encoding='utf-8'))
             should_trade = bool(summary.get('simulation_ready', True))
-        if should_trade:
+        if not bool(direct_exec.get('allowed', False)):
+            state['execution_bridge_skipped'] = str(direct_exec.get('reason', 'direct_execution_blocked'))
+            _stage_skip(
+                config,
+                state,
+                'execution_bridge',
+                '断点续跑执行桥',
+                stage_total,
+                stage_total,
+                summary=str(direct_exec.get('reason', 'direct_execution_blocked')),
+            )
+        elif should_trade:
             try:
                 state['execution_bridge'] = _run_execution_bridge(config=config, project_root=project_root)
                 _stage_finish(config, state, 'execution_bridge', '断点续跑执行桥', stage_total, stage_total, summary='execution_bridge_completed')
@@ -526,6 +571,22 @@ def run_integrated_supervisor(config_path: Path) -> None:
         try:
             _run_v5_gpu(config, project_root, feedback=feedback)
             state['v5_gpu_completed'] = True
+            review_summary = 'review=not_generated'
+            try:
+                review_result = build_v5_cycle_review(config=config)
+                if bool(review_result.get('ok', False)):
+                    state['v5_cycle_review'] = dict(review_result.get('review', {}) or {})
+                    cycle_id = str(state['v5_cycle_review'].get('cycle_id', '') or '')
+                    review_summary = f"review=ok cycle_id={cycle_id}" if cycle_id else 'review=ok'
+                else:
+                    review_error = str(review_result.get('error', 'review_unavailable') or 'review_unavailable')
+                    state['v5_cycle_review_error'] = review_error
+                    review_summary = f"review={review_error}"
+                    log_line(config, f"Supervisor: V5 本地复盘未生成 {review_error}")
+            except Exception as review_exc:
+                state['v5_cycle_review_error'] = str(review_exc)
+                review_summary = f"review_error={review_exc}"
+                log_line(config, f"Supervisor: V5 本地复盘失败：{review_exc}")
             _stage_finish(
                 config,
                 state,
@@ -533,7 +594,10 @@ def run_integrated_supervisor(config_path: Path) -> None:
                 stage_label_map['v5_gpu'],
                 stage_order_map['v5_gpu'],
                 stage_total,
-                summary=f"hub_output_root={config.get('v5_gpu_runtime', {}).get('hub_output_root', '')}",
+                summary=(
+                    f"hub_output_root={config.get('v5_gpu_runtime', {}).get('hub_output_root', '')} "
+                    f"{review_summary}"
+                ),
             )
         except Exception as exc:
             state['v5_gpu_error'] = str(exc)
@@ -553,6 +617,7 @@ def run_integrated_supervisor(config_path: Path) -> None:
                 rec = build_portfolio_recommendation(config=config, bridge_root=Path(str(config['paths']['bridge_root'])))
                 state['portfolio_recommendation'] = rec
                 portfolio_ready = True
+                _maybe_publish_release(config=config, state=state, source_mode='integrated_supervisor')
                 _stage_finish(
                     config,
                     state,
@@ -600,11 +665,25 @@ def run_integrated_supervisor(config_path: Path) -> None:
                 if summary_path.exists():
                     summary = json.loads(summary_path.read_text(encoding='utf-8'))
                     should_trade = bool(summary.get('simulation_ready', True))
-                if should_trade:
+                direct_exec = _supervisor_direct_execution_decision(config)
+                if not bool(direct_exec.get('allowed', False)):
+                    state['execution_bridge_skipped'] = str(direct_exec.get('reason', 'direct_execution_blocked'))
+                    _stage_skip(
+                        config,
+                        state,
+                        'execution_bridge',
+                        stage_label_map['execution_bridge'],
+                        stage_order_map['execution_bridge'],
+                        stage_total,
+                        summary=str(direct_exec.get('reason', 'direct_execution_blocked')),
+                    )
+                elif should_trade:
                     state['execution_bridge'] = _run_execution_bridge(config=config, project_root=project_root)
                     feedback = _build_strategy_feedback(config)
                     _write_strategy_feedback(config, feedback)
                     state['strategy_feedback_post_trade'] = feedback
+                    control_summary = dict(state['execution_bridge'].get('portfolio_control', {}) or {})
+                    exec_feedback = dict(control_summary.get('execution_feedback_summary', {}) or {})
                     _stage_finish(
                         config,
                         state,
@@ -612,7 +691,12 @@ def run_integrated_supervisor(config_path: Path) -> None:
                         stage_label_map['execution_bridge'],
                         stage_order_map['execution_bridge'],
                         stage_total,
-                        summary='execution_bridge_completed',
+                        summary=(
+                            f"orders={state['execution_bridge'].get('n_orders', 0)} "
+                            f"fills={state['execution_bridge'].get('n_fills', 0)} "
+                            f"turnover={float(control_summary.get('final_turnover_ratio', 0.0) or 0.0):.4f} "
+                            f"feedback_success={int(exec_feedback.get('n_success', 0) or 0)}"
+                        ),
                     )
                 else:
                     state['execution_bridge_skipped'] = 'simulation_ready_false'
@@ -641,3 +725,40 @@ def run_integrated_supervisor(config_path: Path) -> None:
         if (not run_forever) and tick >= max_ticks:
             break
         time.sleep(sleep_seconds)
+
+
+def run_research_only(config_path: Path) -> None:
+    """运行研究链并发布组合 release，不直接触发执行桥。"""
+    config = load_config(config_path)
+    shadow = json.loads(json.dumps(config, ensure_ascii=False))
+    exec_cfg = dict(shadow.get('execution_bridge', {}) or {})
+    exec_cfg['enabled'] = False
+    shadow['execution_bridge'] = exec_cfg
+    temp_path = Path(config_path).with_name(f"{Path(config_path).stem}.research_only.runtime.json")
+    temp_path.write_text(json.dumps(shadow, ensure_ascii=False, indent=2), encoding='utf-8')
+    try:
+        run_integrated_supervisor(temp_path)
+    finally:
+        try:
+            temp_path.unlink()
+        except Exception:
+            pass
+
+
+def run_release_only(config_path: Path) -> Dict[str, Any]:
+    """仅把当前最新组合建议发布为可执行 release。"""
+    config = load_config(config_path)
+    release = publish_portfolio_release(
+        config=config,
+        source_mode='release_only',
+        profile=str(config.get('runtime_selection', {}).get('profile', '') or ''),
+    )
+    log_line(
+        config,
+        (
+            "Supervisor: release_only 完成 "
+            f"release_id={release.get('release_id', '')} "
+            f"trade_date={release.get('trade_date', '')}"
+        ),
+    )
+    return release

@@ -15,6 +15,8 @@ formal, live, archived, experimental, or deprecated.
 ## Canonical Runtime Law
 - Formal operator entry:
   - `F:\quant_data\Ashare\launch_canonical.py`
+- Formal trade-clock service entry:
+  - `F:\quant_data\Ashare\trade_clock_service.py`
 - Canonical wrapped business root:
   - `F:\quant_data\Ashare\main_research_runner.py`
 - Unique live runtime root:
@@ -25,6 +27,10 @@ formal, live, archived, experimental, or deprecated.
   - `quick_test`
 - Allowed run profiles:
   - Defined only in `F:\quant_data\Ashare\RUN_PROFILES.yaml`
+- Precision-style split:
+  - `research_only` produces research artifacts and portfolio releases.
+  - `execution_only` consumes a published release and applies trading-clock gates.
+  - `trade_clock_service.py` is the lightweight always-on trigger process for execution.
 
 ## Formal Output Law
 - Governance run-trace root:

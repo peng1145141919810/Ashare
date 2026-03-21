@@ -63,3 +63,43 @@ Detailed engineering handoff and runtime history remain in:
   - `F:\quant_data\Ashare\CHANGELOG_CANONICAL.md`
 - Intent:
   - Mark non-live paths explicitly without moving files or changing imports.
+
+### 2026-03-22 02:00
+- Phase: `5`
+- Change:
+  - Added precision-style split modes `research_only`, `release_only`, and `execution_only`.
+  - Added a portfolio release layer and a lightweight always-on trade clock service.
+  - Added trade-clock autostart scripts for Windows logon startup.
+- Files:
+  - `F:\quant_data\Ashare\launch_canonical.py`
+  - `F:\quant_data\Ashare\main_research_runner.py`
+  - `F:\quant_data\Ashare\trade_clock_service.py`
+  - `F:\quant_data\Ashare\RUN_PROFILES.yaml`
+  - `F:\quant_data\Ashare\SYSTEM_MANIFEST.yaml`
+  - `F:\quant_data\Ashare\PROJECT_LAW.md`
+  - `F:\quant_data\Ashare\scripts\start_trade_clock.ps1`
+  - `F:\quant_data\Ashare\scripts\stop_trade_clock.ps1`
+  - `F:\quant_data\Ashare\scripts\install_trade_clock_autostart.ps1`
+  - `F:\quant_data\Ashare\scripts\remove_trade_clock_autostart.ps1`
+- Intent:
+  - Split research production from execution timing without rewriting the live business chain.
+  - Keep the release layer and clock supervisor additive so the integrated mode remains available for debug and rollback.
+
+### 2026-03-22 02:15
+- Phase: `6`
+- Change:
+  - Added explicit execution-account mode switching between simulation and precision profiles.
+  - Added a precision-trade on/off switch so the clock service can stay online while still blocking real execution.
+  - Registered the new precision account profile in the local gmtrade runtime template.
+- Files:
+  - `F:\quant_data\Ashare\launch_canonical.py`
+  - `F:\quant_data\Ashare\main_research_runner.py`
+  - `F:\quant_data\Ashare\trade_clock_service.py`
+  - `F:\quant_data\Ashare\scripts\start_trade_clock.ps1`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_bridge_runner.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_manager.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\supervisor.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\gmtrade_runtime_config.local.json`
+- Intent:
+  - Prevent accidental precision execution while preserving one lightweight always-on clock process.
