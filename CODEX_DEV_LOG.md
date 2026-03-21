@@ -899,3 +899,27 @@ All timestamps below are local file write times in the current workspace and sho
   - Existing downstream consumers of `supervisor_state.json` should continue to work because the new fields are additive.
 - Rollback:
   - Remove the new progress-printing helpers and incremental stage bookkeeping if the extra observability is judged too noisy.
+
+### 2026-03-21 20:23
+- Type:
+  - `docs`
+- Scope:
+  - `collaboration`
+  - `github`
+- Files:
+  - `F:\quant_data\Ashare\README.md`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added a root `README.md` aimed at GitHub collaborators so the repository homepage now exposes the current formal entrypoint, required local setup, excluded data scope, and the recommended preflight-first startup path.
+  - Explicitly documented that large training tables and other `data/` artifacts are expected to be delivered out of band rather than through the repository.
+- Impact:
+  - New collaborators can clone the repo and see the current runnable chain without having to infer it from older nested docs.
+  - No code path, import structure, runtime behavior, or data contract changed.
+- Validation:
+  - Manual review of the new root README against the current canonical entrypoints and profiles documented in this log.
+  - No integrated runtime was executed.
+- Compatibility:
+  - Backward compatible.
+  - Documentation only.
+- Rollback:
+  - Remove `README.md` and this log entry if a root collaborator-facing readme is no longer desired.
