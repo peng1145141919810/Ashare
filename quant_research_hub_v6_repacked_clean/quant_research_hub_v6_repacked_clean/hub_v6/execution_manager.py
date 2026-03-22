@@ -169,6 +169,9 @@ def run_execution_only(
 ) -> Dict[str, Any]:
     config = load_config(config_path)
     project_root = config_path.resolve().parent.parent
+    policy = execution_policy(config)
+    namespace = str(policy.get("namespace", "main") or "main").strip() or "main"
+    shadow_run = bool(policy.get("shadow_run", False))
     gate = assess_execution_gate(config=config, release_id=release_id, ignore_window=ignore_window)
     safety = assess_system_safety(
         config=config,
@@ -184,24 +187,30 @@ def run_execution_only(
             "status": "gate_only",
             "gate": gate,
             "safety": safety,
+            "execution_namespace": namespace,
+            "shadow_run": shadow_run,
             "market_state": _market_state_runtime(release_doc=_load_release(config=config, release_id=release_id), config=config) if bool(gate.get("ok", False)) else {},
         }
-    if not bool(gate.get("should_execute", False)):
+    if not bool(gate.get("should_execute", False)) and not shadow_run:
         release_doc = _load_release(config=config, release_id=release_id) if bool(gate.get("ok", False)) else {}
         return {
             "ok": bool(gate.get("ok", False)),
             "status": "skipped",
             "gate": gate,
             "safety": safety,
+            "execution_namespace": namespace,
+            "shadow_run": shadow_run,
             "market_state": _market_state_runtime(release_doc=release_doc, config=config) if release_doc else {},
         }
-    if not bool(safety.get("allow_execution", False)):
+    if not bool(safety.get("allow_execution", False)) and not shadow_run:
         release_doc = _load_release(config=config, release_id=release_id) if bool(gate.get("ok", False)) else {}
         return {
             "ok": False,
             "status": "safety_blocked",
             "gate": gate,
             "safety": safety,
+            "execution_namespace": namespace,
+            "shadow_run": shadow_run,
             "market_state": _market_state_runtime(release_doc=release_doc, config=config) if release_doc else {},
         }
 
@@ -223,6 +232,9 @@ def run_execution_only(
         "new_position_policy": str(market_state.get("new_position_policy", "") or ""),
         "effective_reduce_only": bool(safety.get("effective_reduce_only", False)),
         "effective_turnover_multiplier": float(safety.get("effective_turnover_multiplier", 1.0) or 1.0),
+        "execution_namespace": namespace,
+        "shadow_run": shadow_run,
+        "shadow_reason": "shadow_run_bypass" if shadow_run and (not bool(gate.get("should_execute", False)) or not bool(safety.get("allow_execution", False))) else "",
     }
     execution_config = apply_execution_safety_overrides(config=config, safety_report=safety)
     execution_config = _apply_market_state_execution_overrides(config=execution_config, market_state=market_state)
@@ -260,9 +272,11 @@ def run_execution_only(
             "status": "execution_error",
             "gate": gate,
             "safety": safety,
+            "execution_namespace": namespace,
+            "shadow_run": shadow_run,
             "error": str(exc),
         }
-    dispatch_root = ensure_dir(_trade_clock_root(config) / "dispatches" / datetime.now().strftime("%Y%m%d_%H%M%S"))
+    dispatch_root = ensure_dir(_trade_clock_root(config) / "dispatches" / namespace / datetime.now().strftime("%Y%m%d_%H%M%S"))
     dispatch_path = dispatch_root / "execution_dispatch.json"
     dispatch_doc = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -275,6 +289,8 @@ def run_execution_only(
     }
     dispatch_path.write_text(json.dumps(dispatch_doc, ensure_ascii=False, indent=2), encoding="utf-8")
     latest_path = _trade_clock_root(config) / "latest_execution_dispatch.json"
+    if namespace != "main":
+        latest_path = _trade_clock_root(config) / f"latest_execution_dispatch.{namespace}.json"
     latest_path.write_text(json.dumps(dispatch_doc, ensure_ascii=False, indent=2), encoding="utf-8")
     history_paths = record_release_execution(
         release_doc=release_doc,
@@ -293,6 +309,8 @@ def run_execution_only(
         "status": "executed",
         "gate": gate,
         "safety": safety,
+        "execution_namespace": namespace,
+        "shadow_run": shadow_run,
         "market_state": market_state,
         "release": release_context,
         "dispatch_path": str(dispatch_path),

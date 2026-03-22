@@ -21,42 +21,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 from hub_v6 import local_settings as LS
 from hub_v6.config_builder import build_runtime_config
 from hub_v6.clock_supervisor import run_trade_clock
-
-
-def _profile_overrides(profile: str) -> Dict[str, Dict[str, Any]]:
-    if profile == "quick_test":
-        return {
-            "supervisor": {
-                "v5_gpu_max_cycles_per_tick": int(LS.QUICK_TEST_V5_GPU_MAX_CYCLES_PER_TICK),
-                "token_plan_min_interval_hours": float(LS.QUICK_TEST_TOKEN_PLAN_MIN_INTERVAL_HOURS),
-            },
-            "event_ingest": {
-                "max_pdf_fetch_per_run": int(LS.QUICK_TEST_MAX_PDF_FETCH_PER_RUN),
-            },
-            "event_extract": {
-                "max_events_per_run": int(LS.QUICK_TEST_MAX_EVENTS_PER_RUN),
-                "batch_size": int(LS.QUICK_TEST_DEEPSEEK_BATCH_SIZE),
-            },
-            "research_context_pack": {
-                "max_priority_events": int(LS.QUICK_TEST_MAX_PRIORITY_EVENTS),
-            },
-        }
-    return {
-        "supervisor": {
-            "v5_gpu_max_cycles_per_tick": int(LS.OVERNIGHT_V5_GPU_MAX_CYCLES_PER_TICK),
-            "token_plan_min_interval_hours": float(LS.OVERNIGHT_TOKEN_PLAN_MIN_INTERVAL_HOURS),
-        },
-        "event_ingest": {
-            "max_pdf_fetch_per_run": int(LS.OVERNIGHT_MAX_PDF_FETCH_PER_RUN),
-        },
-        "event_extract": {
-            "max_events_per_run": int(LS.OVERNIGHT_MAX_EVENTS_PER_RUN),
-            "batch_size": int(LS.OVERNIGHT_DEEPSEEK_BATCH_SIZE),
-        },
-        "research_context_pack": {
-            "max_priority_events": int(LS.OVERNIGHT_MAX_PRIORITY_EVENTS),
-        },
-    }
+from hub_v6.runtime_profiles import normalize_profile, profile_overrides
 
 
 def _deep_update(config: Dict[str, Any], overrides: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
@@ -67,7 +32,13 @@ def _deep_update(config: Dict[str, Any], overrides: Dict[str, Dict[str, Any]]) -
     return config
 
 
-def _apply_execution_runtime_overrides(config: Dict[str, Any], execution_mode: str = "", precision_trade: str = "default") -> Dict[str, Any]:
+def _apply_execution_runtime_overrides(
+    config: Dict[str, Any],
+    execution_mode: str = "",
+    precision_trade: str = "default",
+    execution_namespace: str = "",
+    shadow_run: bool = False,
+) -> Dict[str, Any]:
     policy = dict(config.get("execution_policy", {}) or {})
     if str(execution_mode).strip():
         policy["account_mode"] = str(execution_mode).strip().lower()
@@ -75,6 +46,9 @@ def _apply_execution_runtime_overrides(config: Dict[str, Any], execution_mode: s
         policy["precision_trade_enabled"] = True
     elif str(precision_trade).strip().lower() == "off":
         policy["precision_trade_enabled"] = False
+    if str(execution_namespace).strip():
+        policy["namespace"] = str(execution_namespace).strip()
+    policy["shadow_run"] = bool(shadow_run)
     config["execution_policy"] = policy
     return config
 
@@ -87,29 +61,46 @@ def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> Path:
     return path
 
 
-def _write_runtime_config(profile: str, execution_mode: str = "", precision_trade: str = "default") -> Path:
+def _write_runtime_config(
+    profile: str,
+    execution_mode: str = "",
+    precision_trade: str = "default",
+    execution_namespace: str = "",
+    shadow_run: bool = False,
+) -> Path:
+    resolved_profile = normalize_profile(profile)
     config = build_runtime_config()
-    config = _deep_update(config, _profile_overrides(profile))
-    config = _apply_execution_runtime_overrides(config=config, execution_mode=execution_mode, precision_trade=precision_trade)
+    config = _deep_update(config, profile_overrides(resolved_profile))
+    config = _apply_execution_runtime_overrides(
+        config=config,
+        execution_mode=execution_mode,
+        precision_trade=precision_trade,
+        execution_namespace=execution_namespace,
+        shadow_run=shadow_run,
+    )
     config["runtime_selection"] = {
-        "profile": str(profile),
+        "profile": str(resolved_profile),
         "default_mode": str(getattr(LS, "RUN_MODE", "integrated_supervisor") or "integrated_supervisor"),
         "execution_mode": str(config.get("execution_policy", {}).get("account_mode", "") or ""),
         "precision_trade_enabled": bool(config.get("execution_policy", {}).get("precision_trade_enabled", False)),
+        "execution_namespace": str(config.get("execution_policy", {}).get("namespace", "") or ""),
+        "shadow_run": bool(config.get("execution_policy", {}).get("shadow_run", False)),
     }
-    config_path = PACKAGE_ROOT / "configs" / f"hub_config.v6.runtime.{profile}.json"
+    config_path = PACKAGE_ROOT / "configs" / f"hub_config.v6.runtime.{resolved_profile}.json"
     _atomic_write_text(config_path, json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     return config_path
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Lightweight always-on trade clock supervisor")
-    parser.add_argument("--profile", default="quick_test", help="Runtime profile used to resolve config")
+    parser.add_argument("--profile", default="daily_production", help="Runtime profile used to resolve config")
     parser.add_argument("--config", default="", help="Optional explicit runtime config path")
     parser.add_argument("--poll-seconds", type=int, default=0, help="Optional override for clock poll seconds")
     parser.add_argument("--once", action="store_true", help="Run one heartbeat and exit")
     parser.add_argument("--execution-mode", default="", choices=["", "simulation", "precision"], help="Execution account mode override")
     parser.add_argument("--precision-trade", default="default", choices=["default", "on", "off"], help="Precision-trade switch override")
+    parser.add_argument("--execution-namespace", default="", help="Execution namespace override")
+    parser.add_argument("--shadow-run", action="store_true", help="Shadow-run execution namespace; keep OMS/audit but do not dispatch broker actions")
     parser.add_argument("--skip-preflight", action="store_true", help="Skip lightweight preflight")
     return parser.parse_args()
 
@@ -124,10 +115,27 @@ def main() -> None:
             str(args.profile).strip(),
             execution_mode=str(args.execution_mode).strip(),
             precision_trade=str(args.precision_trade).strip(),
+            execution_namespace=str(args.execution_namespace).strip(),
+            shadow_run=bool(args.shadow_run),
         )
     )
     if not args.skip_preflight:
-        report = run_preflight(repo_root=repo_root, profile=str(args.profile).strip(), mode="execution_only", explicit_config=str(config_path))
+        phase_reports = []
+        for mode_name in ("research_only", "release_only", "execution_only"):
+            phase_reports.append(
+                run_preflight(
+                    repo_root=repo_root,
+                    profile=str(args.profile).strip(),
+                    mode=mode_name,
+                    explicit_config=str(config_path),
+                )
+            )
+        report = {
+            "ok": all(bool(item.get("ok", False)) for item in phase_reports),
+            "service": "trade_clock_service",
+            "profile": str(args.profile).strip(),
+            "checks": phase_reports,
+        }
         if not bool(report.get("ok", False)):
             raise SystemExit("Trade clock preflight failed.")
     run_trade_clock(

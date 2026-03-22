@@ -177,6 +177,8 @@ def run_oms_cycle(config: Dict[str, Any]) -> Dict[str, Any]:
     release_context = dict(config.get("release", {}) or {})
     release_id = _load_latest_release_id(config)
     execution_policy = dict(config.get("execution_policy", {}) or {})
+    execution_namespace = str(execution_policy.get("namespace", "main") or "main").strip() or "main"
+    shadow_run = bool(execution_policy.get("shadow_run", False))
     oms_cfg = load_oms_config(config)
     oms_paths = build_oms_paths(config)
     overrides = ensure_manual_overrides(oms_paths["manual_overrides"])
@@ -248,14 +250,14 @@ def run_oms_cycle(config: Dict[str, Any]) -> Dict[str, Any]:
     dispatch_orders = list(intent_plan["dispatch_orders"])
     cancel_requests = list(continuity.get("cancel_requests", []) or [])
     cancel_results: List[Dict[str, Any]] = []
-    if cancel_requests and bool(oms_cfg.get("enable_broker_cancel", True)) and hasattr(broker, "cancel_orders"):
+    if cancel_requests and (not shadow_run) and bool(oms_cfg.get("enable_broker_cancel", True)) and hasattr(broker, "cancel_orders"):
         cancel_results = list(broker.cancel_orders(cancel_requests) or [])
 
     raw_rows: List[Dict[str, Any]] = []
     fills: List[FillRecord] = []
     after_state = before_state
     broker_context: Dict[str, Any] = {"submitted_orders": [], "day_orders": [], "unfinished_orders": [], "cancel_results": cancel_results}
-    if dispatch_orders:
+    if dispatch_orders and not shadow_run:
         after_state, fills, raw_rows, broker_context = broker.execute_orders(dispatch_orders, price_map)
         broker_context["cancel_results"] = cancel_results
 
@@ -435,6 +437,7 @@ def run_oms_cycle(config: Dict[str, Any]) -> Dict[str, Any]:
             "n_cancel_requests": len(cancel_requests),
             "n_cancel_results": len(cancel_results),
             "turnover_truncation_ratio": round(max(n_raw_orders - n_final_orders, 0) / max(n_raw_orders, 1), 6),
+            "shadow_run": shadow_run,
         },
         "gap": {
             "n_gap_symbols": int(len(gap_after.index)),
@@ -453,6 +456,7 @@ def run_oms_cycle(config: Dict[str, Any]) -> Dict[str, Any]:
             "state_path": str(oms_paths["latest_manual_intervention_state"]),
             "history_path": str(oms_paths["manual_override_history"]),
         },
+        "execution_namespace": execution_namespace,
         "continuity": dict(continuity_report.get("summary", {}) or {}),
         "compatibility": {
             "latest_account_state_json": str(output_dir / "latest_account_state.json"),
@@ -514,6 +518,8 @@ def run_oms_cycle(config: Dict[str, Any]) -> Dict[str, Any]:
         "price_snapshot_path": str(config.get("price_snapshot_path", "")),
         "broker_type": "gmtrade_sim",
         "execution_policy": execution_policy,
+        "execution_namespace": execution_namespace,
+        "shadow_run": shadow_run,
         "n_target_positions": len(target_positions),
         "n_orders": len(dispatch_orders),
         "n_fills": len(fills),

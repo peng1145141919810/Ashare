@@ -17,7 +17,7 @@ def load_config(config_path: Path) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: 配置字典。
     """
-    return json.loads(config_path.read_text(encoding="utf-8"))
+    return json.loads(config_path.read_text(encoding="utf-8-sig"))
 
 
 def ensure_dir(path: Path) -> Path:

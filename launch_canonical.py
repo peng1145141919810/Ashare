@@ -16,7 +16,7 @@ def _repo_root() -> Path:
 
 
 def _load_json_yaml(path: Path) -> Dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def _system_manifest(repo_root: Path) -> Dict[str, Any]:
@@ -46,6 +46,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gate-only", action="store_true", help="Only applies to execution_only")
     parser.add_argument("--execution-mode", default="", choices=["", "simulation", "precision"], help="Execution account mode override")
     parser.add_argument("--precision-trade", default="default", choices=["default", "on", "off"], help="Precision-trade switch override")
+    parser.add_argument("--execution-namespace", default="", help="Execution namespace override for simulation/shadow isolation")
+    parser.add_argument("--shadow-run", action="store_true", help="Execution-only shadow-run; keep OMS/audit but do not dispatch broker actions")
+    parser.add_argument("--source-summary-path", default="", help="Release-only explicit portfolio_recommendation.json path")
+    parser.add_argument("--source-target-positions-path", default="", help="Release-only explicit target_positions.csv path")
+    parser.add_argument("--release-note", default="", help="Release-only note written into the release manifest")
+    parser.add_argument("--release-source-mode", default="", help="Release-only source_mode override")
     parser.add_argument("--skip-preflight", action="store_true", help="Skip lightweight preflight checks")
     parser.add_argument("--preflight-only", action="store_true", help="Run only the lightweight preflight checks")
     return parser.parse_args()
@@ -92,6 +98,18 @@ def _build_command(research_python: str, manifest: Dict[str, Any], args: argpars
         command.extend(["--execution-mode", str(args.execution_mode).strip()])
     if str(args.precision_trade).strip().lower() != "default":
         command.extend(["--precision-trade", str(args.precision_trade).strip().lower()])
+    if str(args.execution_namespace).strip():
+        command.extend(["--execution-namespace", str(args.execution_namespace).strip()])
+    if bool(args.shadow_run):
+        command.append("--shadow-run")
+    if str(args.source_summary_path).strip():
+        command.extend(["--source-summary-path", str(Path(args.source_summary_path).resolve())])
+    if str(args.source_target_positions_path).strip():
+        command.extend(["--source-target-positions-path", str(Path(args.source_target_positions_path).resolve())])
+    if str(args.release_note).strip():
+        command.extend(["--release-note", str(args.release_note).strip()])
+    if str(args.release_source_mode).strip():
+        command.extend(["--release-source-mode", str(args.release_source_mode).strip()])
     return command
 
 

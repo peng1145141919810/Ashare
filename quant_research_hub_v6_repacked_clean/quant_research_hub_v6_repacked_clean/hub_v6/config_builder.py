@@ -59,6 +59,7 @@ def build_runtime_config() -> Dict[str, Any]:
             "live_execution_root": LS.LIVE_EXECUTION_ROOT,
             "trade_release_root": str(getattr(LS, "TRADE_RELEASE_ROOT", Path(LS.LIVE_EXECUTION_ROOT).parents[0] / "trade_release_v1")),
             "trade_clock_root": str(getattr(LS, "TRADE_CLOCK_ROOT", Path(LS.LIVE_EXECUTION_ROOT).parents[0] / "trade_clock")),
+            "automation_runs_root": str(getattr(LS, "AUTOMATION_RUNS_ROOT", Path(LS.PROJECT_ROOT).parents[1] / "outputs" / "automation_runs")),
             "trading_calendar_cache_path": str(getattr(LS, "TRADING_CALENDAR_CACHE_PATH", Path(LS.MARKET_STATE_ROOT) / "trading_calendar_a_share.csv")),
             "industry_router_output_root": str(getattr(LS, "INDUSTRY_ROUTER_OUTPUT_ROOT", Path(LS.RESEARCH_ROOT) / "industry_router")),
             "technical_confirmation_root": str(getattr(LS, "TECHNICAL_CONFIRMATION_ROOT", Path(LS.RESEARCH_ROOT) / "technical_confirmation")),
@@ -273,6 +274,8 @@ def build_runtime_config() -> Dict[str, Any]:
             "account_mode": str(getattr(LS, "EXECUTION_ACCOUNT_MODE", "simulation") or "simulation").strip().lower(),
             "precision_trade_enabled": bool(getattr(LS, "PRECISION_TRADE_ENABLED", False)),
             "allow_integrated_precision_execution": bool(getattr(LS, "ALLOW_INTEGRATED_PRECISION_EXECUTION", False)),
+            "namespace": "main",
+            "shadow_run": False,
         },
         "trade_release": {
             "enabled": bool(getattr(LS, "ENABLE_TRADE_RELEASE", True)),
@@ -293,6 +296,45 @@ def build_runtime_config() -> Dict[str, Any]:
                 )
                 or [{"label": "morning_primary", "start": "09:30:30", "end": "10:00:00"}]
             ),
+            "scheduler": {
+                "enabled": bool(getattr(LS, "TRADE_CLOCK_SCHEDULER_ENABLED", True)),
+                "profile": str(getattr(LS, "TRADE_CLOCK_SCHEDULER_PROFILE", "daily_production") or "daily_production"),
+                "log_tail_lines": int(getattr(LS, "TRADE_CLOCK_SCHEDULER_LOG_TAIL_LINES", 30) or 30),
+                "fallback_max_portfolio_age_hours": int(getattr(LS, "TRADE_CLOCK_FALLBACK_MAX_PORTFOLIO_AGE_HOURS", 96) or 96),
+                "fallback_require_release": bool(getattr(LS, "TRADE_CLOCK_FALLBACK_REQUIRE_RELEASE", False)),
+                "simulation_namespace": str(getattr(LS, "TRADE_CLOCK_SIMULATION_NAMESPACE", "simulation") or "simulation"),
+                "shadow_namespace": str(getattr(LS, "TRADE_CLOCK_SHADOW_NAMESPACE", "shadow") or "shadow"),
+                "simulation_execution_mode": str(getattr(LS, "TRADE_CLOCK_SIMULATION_EXECUTION_MODE", "precision") or "precision"),
+                "shadow_execution_mode": str(getattr(LS, "TRADE_CLOCK_SHADOW_EXECUTION_MODE", "precision") or "precision"),
+                "simulation_precision_trade": bool(getattr(LS, "TRADE_CLOCK_SIMULATION_PRECISION_TRADE", True)),
+                "shadow_precision_trade": bool(getattr(LS, "TRADE_CLOCK_SHADOW_PRECISION_TRADE", True)),
+                "phases": {
+                    "research": {
+                        "time": str(getattr(LS, "TRADE_CLOCK_PHASE_RESEARCH_TIME", "15:05:00") or "15:05:00"),
+                        "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_RESEARCH_TIMEOUT_MINUTES", 420) or 420),
+                    },
+                    "release": {
+                        "time": str(getattr(LS, "TRADE_CLOCK_PHASE_RELEASE_TIME", "15:10:00") or "15:10:00"),
+                        "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_RELEASE_TIMEOUT_MINUTES", 30) or 30),
+                    },
+                    "preopen_gate": {
+                        "time": str(getattr(LS, "TRADE_CLOCK_PHASE_PREOPEN_GATE_TIME", "09:20:00") or "09:20:00"),
+                        "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_PREOPEN_GATE_TIMEOUT_MINUTES", 15) or 15),
+                    },
+                    "simulation": {
+                        "time": str(getattr(LS, "TRADE_CLOCK_PHASE_SIMULATION_TIME", "09:28:00") or "09:28:00"),
+                        "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_SIMULATION_TIMEOUT_MINUTES", 45) or 45),
+                    },
+                    "shadow": {
+                        "time": str(getattr(LS, "TRADE_CLOCK_PHASE_SHADOW_TIME", "09:35:00") or "09:35:00"),
+                        "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_SHADOW_TIMEOUT_MINUTES", 30) or 30),
+                    },
+                    "summary": {
+                        "time": str(getattr(LS, "TRADE_CLOCK_PHASE_SUMMARY_TIME", "15:20:00") or "15:20:00"),
+                        "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_SUMMARY_TIMEOUT_MINUTES", 20) or 20),
+                    },
+                },
+            },
         },
         "execution_bridge": {
             "enabled": LS.ENABLE_EXECUTION_BRIDGE,

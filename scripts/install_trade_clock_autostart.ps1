@@ -1,17 +1,9 @@
 $ErrorActionPreference = "Stop"
 
 $taskName = "Ashare Trade Clock"
-$startScript = Join-Path $PSScriptRoot "start_trade_clock.ps1"
-$taskArgument = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$startScript`""
-$userId = if ($env:USERDOMAIN) { "$($env:USERDOMAIN)\$($env:USERNAME)" } else { $env:USERNAME }
-
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $taskArgument
-$trigger = New-ScheduledTaskTrigger -AtLogOn
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
-$principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
-
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
-
-Write-Output "Installed trade clock autostart task: $taskName"
-Write-Output "Command: powershell.exe $taskArgument"
-Write-Output "Behavior: logon autostart, hidden launcher, ignore duplicate instances, restart on failure every 1 minute."
+Write-Output "Trade clock daily scheduler no longer supports logon autostart."
+Write-Output "Use scripts\\start_trade_clock.ps1 for manual start and scripts\\stop_trade_clock.ps1 for manual stop."
+if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+    Write-Output "A legacy scheduled task still exists: $taskName"
+    Write-Output "If you want to clean it up, run scripts\\remove_trade_clock_autostart.ps1"
+}

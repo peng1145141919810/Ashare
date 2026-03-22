@@ -32,7 +32,7 @@
   - if a proposed innovation increases research-side ambition but weakens execution-side safety, keep the safety boundary conservative and isolate the innovation upstream
 
 ## Latest Stable Snapshot
-- Snapshot date: `2026-03-22`
+- Snapshot date: `2026-03-23`
 - Formal operator entry: `F:\quant_data\Ashare\launch_canonical.py`
 - Formal trade-clock service entry: `F:\quant_data\Ashare\trade_clock_service.py`
 - Canonical business root entry: `F:\quant_data\Ashare\main_research_runner.py`
@@ -68,48 +68,81 @@
 - Current execution default:
   - account mode: `precision`
   - precision trade switch: `False`
-  - operator implication: the clock service now stays online by default but only writes heartbeat/gate logs unless the precision-trade switch is explicitly turned on
+  - operator implication: precision remains the default execution account binding, but the daily scheduler is now a manual-start process and does not auto-run after reboot
 - Precision-style split:
   - `research_only` runs the research chain and publishes a portfolio release without directly calling the execution bridge.
   - `release_only` republishes the latest `portfolio_recommendation.json` and `target_positions.csv` into the formal release layer.
   - `execution_only` reads the latest published release, applies trading-clock gates, and only then calls the gmtrade bridge.
-  - `trade_clock_service.py` is the lightweight always-on trigger process that watches time and release state, then dispatches `execution_only` at the configured window.
+  - `trade_clock_service.py` is now the lightweight manual-start daily scheduler that watches phase timepoints, release state, and safety truth, then dispatches bounded subprocess phases.
 - Trade clock runtime:
   - release root: `F:\quant_data\Ashare\data\trade_release_v1`
   - clock state root: `F:\quant_data\Ashare\data\trade_clock`
   - OMS truth root: `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1`
+  - automation pack root: `F:\quant_data\Ashare\outputs\automation_runs`
   - latest release pointer: `F:\quant_data\Ashare\data\trade_release_v1\latest_release.json`
   - latest clock heartbeat: `F:\quant_data\Ashare\data\trade_clock\clock_state.json`
+  - phase-state root: `F:\quant_data\Ashare\data\trade_clock\phase_state`
+  - scheduler-runtime state: `F:\quant_data\Ashare\data\trade_clock\runtime\scheduler_runtime.json`
+  - trade-clock runtime log root: `F:\quant_data\Ashare\data\trade_clock\runtime`
   - latest safety truth: `F:\quant_data\Ashare\data\trade_clock\system_safety_state.json`
   - incident log: `F:\quant_data\Ashare\data\trade_clock\incident_log.jsonl`
   - manual overrides: `F:\quant_data\Ashare\data\trade_clock\manual_overrides.json`
   - latest account health probe: `F:\quant_data\Ashare\data\trade_clock\latest_account_health.json`
   - latest OMS actual-state truth: `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\latest_actual_portfolio_state.json`
-  - autostart task name: `Ashare Trade Clock`
-  - autostart scripts:
-    - install: `F:\quant_data\Ashare\scripts\install_trade_clock_autostart.ps1`
-    - remove: `F:\quant_data\Ashare\scripts\remove_trade_clock_autostart.ps1`
+  - manual operator scripts:
     - start now: `F:\quant_data\Ashare\scripts\start_trade_clock.ps1`
     - stop now: `F:\quant_data\Ashare\scripts\stop_trade_clock.ps1`
+    - show status: `F:\quant_data\Ashare\scripts\show_trade_clock_status.ps1`
+  - legacy autostart scripts:
+    - install: `F:\quant_data\Ashare\scripts\install_trade_clock_autostart.ps1` (deprecated; now prints guidance only)
+    - remove: `F:\quant_data\Ashare\scripts\remove_trade_clock_autostart.ps1` (removes old scheduled task if one exists)
   - heartbeat/safety split:
     - `clock_state.json` is now the lightweight heartbeat
     - `system_safety_state.json` is the current safety truth
     - `incident_log.jsonl` is the append-only abnormal-event ledger
+- Daily automation scheduler truth:
+  - automatic production profile: `daily_production`
+  - profile runtime weight:
+    - above `quick_test`
+    - below `overnight`
+  - fixed V5 cycles: `3`
+  - current phase order:
+    - `research`
+    - `release`
+    - `preopen_gate`
+    - `simulation`
+    - `shadow`
+    - `summary`
+  - current production model:
+    - manual PowerShell start
+    - long-lived but lightweight scheduler process
+    - child subprocesses for all heavy work
+    - fallback release path if nightly research fails or times out
+  - namespace split:
+    - simulation OMS truth lives under `...\oms_v1\simulation`
+    - shadow OMS truth lives under `...\oms_v1\shadow`
 - Current recommended commands:
   - operator plain-language guide:
     - `F:\quant_data\Ashare\SYSTEM_DAILY_USAGE_GUIDE_CN.txt`
   - `python F:\quant_data\Ashare\launch_canonical.py`
   - `python F:\quant_data\Ashare\launch_canonical.py --profile overnight`
   - `python F:\quant_data\Ashare\launch_canonical.py --profile quick_test`
+  - `python F:\quant_data\Ashare\launch_canonical.py --profile daily_production`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode industry_router_only --profile quick_test`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode resume_downstream --profile quick_test`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode research_only --profile quick_test`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode research_only --profile daily_production`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode release_only --profile quick_test`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode release_only --profile daily_production`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --gate-only`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile daily_production --gate-only`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --execution-mode simulation --gate-only`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --execution-mode precision --precision-trade off --gate-only`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --execution-mode precision --precision-trade on`
-  - `python F:\quant_data\Ashare\trade_clock_service.py --profile quick_test --once`
+  - `python F:\quant_data\Ashare\trade_clock_service.py --profile daily_production --once`
+  - `powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\start_trade_clock.ps1 -Profile daily_production`
+  - `powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\stop_trade_clock.ps1`
+  - `powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\show_trade_clock_status.ps1`
   - `notepad F:\quant_data\Ashare\data\trade_clock\manual_overrides.json`
 - Runtime transparency:
   - `main_research_runner.py` now prints a stage preview before dispatch.
@@ -229,6 +262,7 @@
 ## Run Profile Quick Reference
 | Profile | Intent | V6 Plan Reuse | V5 Cycles | Use Case | Notes |
 | --- | --- | --- | --- | --- | --- |
+| `daily_production` | bounded daily production research | `24h` | `3` | stable daily automation chain, release generation, and next-day execution prep | automatic mainline profile; designed to finish on time and tolerate fallback |
 | `overnight` | full nightly research | `24h` | `8` | sleep-time full research pass | heavy nightly mode; highest runtime cost |
 | `quick_test` | minimal full-chain debug | `24h` | `1` | faster debugging of the integrated chain | current code default; not a smoke test |
 
@@ -247,8 +281,8 @@
 | Mode | What It Runs | Typical Use | Direct Execution Behavior |
 | --- | --- | --- | --- |
 | `integrated_supervisor` | market pipeline -> strategy feedback -> V6 plan -> V5.1 -> portfolio recommendation -> optional execution bridge | integration debug and old one-shot chain | simulation can still execute; precision is blocked by default unless `ALLOW_INTEGRATED_PRECISION_EXECUTION=True` |
-| `research_only` | market pipeline -> strategy feedback -> V6 plan -> V5.1 -> portfolio recommendation -> release publish | formal research-side nightly production | does not directly execute |
-| `release_only` | republishes latest portfolio artifacts into `trade_release_v1` | refresh release after portfolio files changed or after recovery | does not directly execute |
+| `research_only` | market pipeline -> strategy feedback -> V6 plan -> V5.1 -> portfolio recommendation -> release publish | formal research-side production; daily scheduler uses this for nightly bounded research | does not directly execute |
+| `release_only` | republishes latest portfolio artifacts into `trade_release_v1` | refresh release after portfolio files changed, after recovery, or from explicit fallback source artifacts | does not directly execute |
 | `execution_only` | reads latest release -> checks trade gate/window -> dispatches execution bridge if allowed | formal execution-side entry | simulation is release-driven; precision is time-gated and obeys `precision_trade` |
 | oms_validate | bounded OMS synthetic/replay validation harness | OMS hardening regression checks after refactors | no execution bridge; no live broker required |
 | `resume_downstream` | restart from portfolio recommendation and optionally rerun execution | downstream recovery after V5 finished but later stages failed | precision direct execution is blocked by default |
@@ -280,11 +314,20 @@
 | default run mode | `hub_v6/local_settings.py` -> `RUN_MODE` | `integrated_supervisor` |
 | default profile | `hub_v6/local_settings.py` -> `DEFAULT_RUN_PROFILE` | `quick_test` |
 | one-off run mode override | `launch_canonical.py --mode ...` or `main_research_runner.py --mode ...` | operator override only; does not rewrite defaults |
-| one-off profile override | `launch_canonical.py --profile overnight|quick_test` | operator override only |
+| one-off profile override | `launch_canonical.py --profile overnight|daily_production|quick_test` | operator override only |
 | default account mode | `hub_v6/local_settings.py` -> `EXECUTION_ACCOUNT_MODE` | `precision` |
 | one-off account mode override | `--execution-mode simulation|precision` | operator override only |
 | precision live-trade master switch | `hub_v6/local_settings.py` -> `PRECISION_TRADE_ENABLED` | `False` |
 | one-off precision-trade override | `--precision-trade on|off` | operator override only |
+| manual scheduler start/stop | `scripts/start_trade_clock.ps1`, `scripts/stop_trade_clock.ps1` | manual operator process; no autostart |
+| scheduler status view | `scripts/show_trade_clock_status.ps1` | concise read-only operator summary over clock / release / safety / phase / OMS |
+| scheduler default profile | `hub_v6/local_settings.py` -> `TRADE_CLOCK_SCHEDULER_PROFILE` | `daily_production` |
+| scheduler phase times | `hub_v6/local_settings.py` -> `TRADE_CLOCK_PHASE_*_TIME` | research=15:05, release=15:10, preopen_gate=09:20, simulation=09:30:35, shadow=09:35, summary=15:20 |
+| scheduler phase timeouts | `hub_v6/local_settings.py` -> `TRADE_CLOCK_*_TIMEOUT_MINUTES` | current local values; bounded per phase |
+| automation pack root | `hub_v6/local_settings.py` -> `AUTOMATION_RUNS_ROOT` | `F:\quant_data\Ashare\outputs\automation_runs` |
+| scheduler simulation/shadow namespace split | `hub_v6/local_settings.py` -> `TRADE_CLOCK_SIMULATION_NAMESPACE`, `TRADE_CLOCK_SHADOW_NAMESPACE` | `simulation` / `shadow` |
+| one-off execution namespace override | `--execution-namespace ...` | operator override only |
+| one-off shadow execution flag | `--shadow-run` | operator override only |
 | whether integrated modes may directly execute precision | `hub_v6/local_settings.py` -> `ALLOW_INTEGRATED_PRECISION_EXECUTION` | `False` |
 | simulation / precision account ids | `configs/gmtrade_runtime_config.local.json` -> `broker.account_profiles` | simulation=`4d74746e-243c-11f1-a169-00163e022aa6`; precision=`e18905e4-254f-11f1-b37d-00163e022aa6` |
 | broker endpoint / buy-sell ratios / lot size / min trade value / cash reserve | `configs/gmtrade_runtime_config.local.json` | current live local template |
@@ -652,12 +695,17 @@
 | oms_validation_report.json | OMS validation harness | operator / Codex regression checks | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\validation\oms_validation_report.json | JSON | bounded synthetic/replay validation report over reconciliation, continuity, lifecycle, and recovery scenarios |
 | oms_validation_summary.md | OMS validation harness | operator / Codex regression checks | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\validation\oms_validation_summary.md | Markdown | short human-readable pass/fail summary for the OMS validation harness |
 | `clock_state.json` | trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\clock_state.json` | JSON | heartbeat, gate status, active window, and last dispatch state |
+| `scheduler_runtime.json` | trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\runtime\scheduler_runtime.json` | JSON | scheduler self-state with process pid, active phase, stop reason, and last update time |
+| `phase_state\YYYYMMDD.json` | trade clock supervisor | operator / debugging / postmortem | `F:\quant_data\Ashare\data\trade_clock\phase_state\YYYYMMDD.json` | JSON | per-day phase truth for `research/release/preopen_gate/simulation/shadow/summary` with status, timestamps, release id, and stdout/stderr paths |
 | `system_safety_state.json` | safety guard | operator / execution gate / trade clock | `F:\quant_data\Ashare\data\trade_clock\system_safety_state.json` | JSON | current execution safety truth including system mode, market regime, manual overrides, release validation, and freshness markers |
 | `incident_log.jsonl` | safety guard | operator / debugging / postmortem | `F:\quant_data\Ashare\data\trade_clock\incident_log.jsonl` | JSONL | append-only abnormal-event log with before/after safety modes and action taken |
 | `manual_overrides.json` | operator + safety guard | trade clock / execution gate | `F:\quant_data\Ashare\data\trade_clock\manual_overrides.json` | JSON | operator-editable `manual_halt` / `manual_reduce_only` kill-switch file |
 | `manual_override_history.jsonl` | safety guard | operator / postmortem | `F:\quant_data\Ashare\data\trade_clock\manual_override_history.jsonl` | JSONL | audit trail when manual override values change |
 | `latest_account_health.json` | gmtrade health probe sidecar | safety guard / operator | `F:\quant_data\Ashare\data\trade_clock\latest_account_health.json` | JSON | latest fresh or cached account/position/order health snapshot fetched via `gmtrade39` |
 | `latest_execution_dispatch.json` | execution gate / trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\latest_execution_dispatch.json` | JSON | latest release-triggered execution dispatch outcome |
+| `latest_execution_dispatch.<namespace>.json` | execution gate / trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\latest_execution_dispatch.<namespace>.json` | JSON | namespace-isolated dispatch result for simulation or shadow execution lines |
+| `outputs\automation_runs\YYYYMMDD\run_manifest.json` | trade clock summary packager | operator / debugging / daily audit | `F:\quant_data\Ashare\outputs\automation_runs\YYYYMMDD\run_manifest.json` | JSON | per-day automation bundle manifest with release id, namespaces, report path, and copied phase artifacts |
+| `outputs\automation_runs\YYYYMMDD\daily_report.txt` | trade clock summary packager | operator | `F:\quant_data\Ashare\outputs\automation_runs\YYYYMMDD\daily_report.txt` | Text | plain-language daily automation summary over phase results, release, OMS sidecars, warnings, and critical flags |
 | `execution_report_*.json` | Gmtrade execution bridge | operator / supervisor feedback | `F:\quant_data\Ashare\data\live_execution_bridge\execution_report_*.json` | JSON | execution summary per run |
 | `latest_account_state.json` | live execution compatibility writer | operator / legacy downstream readers | `F:\quant_data\Ashare\data\live_execution_bridge\latest_account_state.json` | JSON | compatibility-only latest account snapshot; OMS ledgers and `latest_actual_portfolio_state.json` are now authoritative |
 | `position_state_before.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_before.json` | JSON | planned-trade ledger snapshot before controls are applied |
@@ -766,7 +814,8 @@
 - The dev-log live portfolio snapshot is refreshed only by execution runs; if execution is disabled or skipped, that section can lag behind the latest research-side target portfolio.
 - `trade_clock_service.py` is implemented as a user-session process plus a Windows logon task, not a native Windows service.
 - The trading-day check depends on the cached `trading_calendar_a_share.csv` file plus Tushare refresh; if both are unavailable, the clock gate will block rather than guess a holiday schedule.
-- There is no code-level guarantee against third-party security software terminating the clock process; the current mitigation is low resource usage plus scheduled-task restart on next logon/failure.
+- There is no code-level guarantee against third-party security software terminating the clock process; the current mitigation is low resource usage plus manual restart scripts and clear runtime logs.
+- In the current Codex / IDE environment, direct complex foreground Python invocations can occasionally fail with `ACP process` initialization errors or exit code `0xC000013A`; for operator automation and in-session validation, prefer the PowerShell start/stop scripts or `Start-Process` with stdout/stderr redirected to files.
 - The safety layer is intentionally fail-closed. Recent execution failures, stale account truth, unfinished broker orders, or release validation failures can push `system_safety_state.json` to `HALT` and block new execution until the operator intervenes.
 - The initial market-safety thresholds are deliberately conservative and can classify a broad market selloff day as `PANIC`; treat them as operational guardrails, not a final market-timing model.
 - The active precision/simulation account mapping currently lives in `configs\gmtrade_runtime_config.local.json`; if that file is changed manually, make sure the `account_profiles` block stays aligned with `EXECUTION_ACCOUNT_MODE`.
@@ -947,6 +996,90 @@
 
 ## Change Log
 All timestamps below are local file write times in the current workspace and should be read as Asia/Shanghai local time.
+
+### 2026-03-23 03:05
+- Type:
+  - `feature`
+  - `ops`
+  - `bugfix`
+- Scope:
+  - `execution`
+  - `infra`
+  - `operator`
+- Files:
+  - `F:\quant_data\Ashare\main_research_runner.py`
+  - `F:\quant_data\Ashare\launch_canonical.py`
+  - `F:\quant_data\Ashare\trade_clock_service.py`
+  - `F:\quant_data\Ashare\RUN_PROFILES.yaml`
+  - `F:\quant_data\Ashare\SYSTEM_DAILY_USAGE_GUIDE_CN.txt`
+  - `F:\quant_data\Ashare\scripts\start_trade_clock.ps1`
+  - `F:\quant_data\Ashare\scripts\stop_trade_clock.ps1`
+  - `F:\quant_data\Ashare\scripts\show_trade_clock_status.ps1`
+  - `F:\quant_data\Ashare\scripts\install_trade_clock_autostart.ps1`
+  - `F:\quant_data\Ashare\scripts\remove_trade_clock_autostart.ps1`
+  - `F:\quant_data\Ashare\tools\preflight_check.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\runtime_profiles.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_utils.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_bridge_runner.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_manager.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\oms\runtime.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\supervisor.py`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Upgraded `trade_clock_service.py` plus `hub_v6\clock_supervisor.py` from a simple execution-window trigger into a manual-start daily scheduler with six formal phases:
+    - `research`
+    - `release`
+    - `preopen_gate`
+    - `simulation`
+    - `shadow`
+    - `summary`
+  - Added the new formal runtime profile `daily_production` and fixed its bounded research weight to `V5 cycles = 3`.
+  - Kept heavy work out of the resident process: the scheduler now launches all phase work through short-lived subprocesses, writes per-day phase state under `data\trade_clock\phase_state`, stores runtime/log state under `data\trade_clock\runtime`, and writes packaged daily operator bundles under `outputs\automation_runs\YYYYMMDD`.
+  - Added simulation/shadow namespace isolation so both execution lines consume the same release but keep separate dispatch and OMS truth roots.
+  - Added fallback-release support: `release_only` can now publish from explicit portfolio artifacts when `research_only` fails or times out, instead of collapsing the whole next-day chain.
+  - Added BOM-tolerant config reads (`utf-8-sig`) so PowerShell-written temp configs and override payloads do not fail JSON decoding.
+  - Reworked the operator surface:
+    - `start_trade_clock.ps1` / `stop_trade_clock.ps1` are now the primary manual lifecycle scripts
+    - old trade-clock autostart install/remove scripts are deprecated into legacy-cleanup helpers
+    - new `show_trade_clock_status.ps1` gives a concise read-only summary over service state, release, safety, phase status, OMS sidecars, and daily pack location
+    - `SYSTEM_DAILY_USAGE_GUIDE_CN.txt` now documents the automation chain, config surface, file meanings, and routine operator commands in plain language
+  - Documented and worked around the current IDE/Codex ACP instability by favoring background subprocesses with file-based stdout/stderr instead of long foreground Python sessions for automation validation.
+- Impact:
+  - Stable-running test phase now has one manual-start scheduler path that can keep running without depending on IDE foreground control.
+  - The daily automation chain is now explicit and inspectable even if one phase fails.
+  - Operators can inspect status through:
+    - `clock_state.json`
+    - `scheduler_runtime.json`
+    - `phase_state\YYYYMMDD.json`
+    - `outputs\automation_runs\YYYYMMDD`
+    without digging directly through raw subprocess output first.
+  - Research and execution authority boundaries remain intact; this is a scheduling/operability upgrade, not a power-structure rollback.
+- Validation:
+  - Ran `python -m py_compile` on all touched Python files, including the scheduler, profile helper, config readers, execution namespace plumbing, and release fallback paths.
+  - Ran `python F:\quant_data\Ashare\trade_clock_service.py --profile daily_production --once --skip-preflight`; confirmed `clock_state.json` now reports scheduler roots and `scheduler_profile=daily_production`.
+  - Ran a synthetic automation probe through `Start-Process` with redirected logs; confirmed:
+    - `daily_production` resolves to `V5 cycles = 3`
+    - Windows lock detection prevents double acquisition
+    - fallback source discovery returns a usable source
+    - daily packager writes `run_manifest.json`, `phase_status.json`, and `daily_report.txt`
+  - Ran a namespace-isolation probe and confirmed simulation/shadow output roots and OMS roots differ.
+  - Ran a fallback-release probe with explicit summary/target inputs; after the BOM fix, `release_only` successfully published a release with `source_mode=fallback_release`.
+  - Ran `powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\start_trade_clock.ps1 -Profile daily_production` and `stop_trade_clock.ps1`; confirmed graceful stop after the idle-sleep interrupt fix.
+  - Ran `powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\show_trade_clock_status.ps1` and confirmed it renders current service, release, safety, phase, OMS, and daily-pack paths.
+  - No full integrated pipeline and no real broker execution were run.
+- Compatibility:
+  - Additive at the operator/protocol level.
+  - Existing `quick_test` and `overnight` profiles remain valid.
+  - Existing `execution_only`, `research_only`, and `release_only` interfaces remain valid, but `release_only` now supports explicit fallback-source inputs.
+  - Trade-clock autostart is no longer the recommended operating model; legacy cleanup scripts remain only to remove older scheduled tasks.
+- Rollback:
+  - Revert `trade_clock_service.py`, `hub_v6\clock_supervisor.py`, and the new profile/helper files to restore the older clock behavior.
+  - Remove `show_trade_clock_status.ps1` and restore the earlier operator guide if the new manual-scheduler operating model is abandoned.
+  - If only the fallback or BOM handling needs rollback, revert the corresponding changes in `supervisor.py`, `config_utils.py`, `main_research_runner.py`, and `launch_canonical.py`.
 
 ### 2026-03-22 18:47
 - Type:

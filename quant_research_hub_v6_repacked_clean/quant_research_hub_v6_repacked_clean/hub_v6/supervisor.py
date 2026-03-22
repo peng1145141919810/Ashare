@@ -760,13 +760,22 @@ def run_research_only(config_path: Path) -> None:
             pass
 
 
-def run_release_only(config_path: Path) -> Dict[str, Any]:
+def run_release_only(
+    config_path: Path,
+    source_mode: str = "release_only",
+    summary_path: str = "",
+    target_positions_path: str = "",
+    note: str = "",
+) -> Dict[str, Any]:
     """仅把当前最新组合建议发布为可执行 release。"""
     config = load_config(config_path)
     release = publish_portfolio_release(
         config=config,
-        source_mode='release_only',
+        source_mode=str(source_mode or "release_only"),
         profile=str(config.get('runtime_selection', {}).get('profile', '') or ''),
+        summary_path=str(summary_path or ""),
+        target_positions_path=str(target_positions_path or ""),
+        note=str(note or ""),
     )
     log_line(
         config,

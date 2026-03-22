@@ -11,7 +11,7 @@ from typing import Any, Dict, List
 
 
 def _load_json_yaml(path: Path) -> Dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def _append_check(checks: List[Dict[str, Any]], name: str, ok: bool, detail: str) -> None:

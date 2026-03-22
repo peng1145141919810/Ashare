@@ -1,0 +1,63 @@
+{
+  "portfolio_root": "F:\\quant_data\\Ashare\\data\\portfolio_recommendation_v6",
+  "explicit_portfolio_path": "F:\\quant_data\\Ashare\\data\\portfolio_recommendation_v6\\target_positions.csv",
+  "price_snapshot_path": "F:\\quant_data\\Ashare\\data\\live_execution_bridge\\daily_price_snapshot.csv",
+  "output_dir": "F:\\quant_data\\Ashare\\data\\live_execution_bridge",
+  "broker": {
+    "token": "613cb54d87e5ea0ebfe3c1bb6c2a6e7ba937f72d",
+    "account_id": "e18905e4-254f-11f1-b37d-00163e022aa6",
+    "account_alias": "precision_stock_01",
+    "account_profiles": {
+      "simulation": {
+        "account_id": "4d74746e-243c-11f1-a169-00163e022aa6",
+        "account_alias": "paper_stock_01"
+      },
+      "precision": {
+        "account_id": "e18905e4-254f-11f1-b37d-00163e022aa6",
+        "account_alias": "precision_stock_01"
+      }
+    },
+    "endpoint": "api.myquant.cn:9000",
+    "buy_price_ratio": 1.01,
+    "sell_price_ratio": 0.99,
+    "order_wait_seconds": 3.0,
+    "sell_by_available": true,
+    "lot_size": 100,
+    "min_trade_value": 2000.0,
+    "cash_reserve_ratio": 0.02,
+    "selected_account_mode": "precision"
+  },
+  "portfolio": {
+    "max_names": 20,
+    "fallback_equal_weight": true,
+    "weight_sum_limit": 0.98
+  },
+  "portfolio_control": {
+    "enabled": true,
+    "drift_threshold": 0.005,
+    "max_daily_turnover_ratio": 0.25,
+    "enable_execution_feedback": true,
+    "enable_dev_log_snapshot": true,
+    "dev_log_top_holdings": 8,
+    "allow_odd_lot_exit": true,
+    "reduce_only": false,
+    "codex_dev_log_path": "F:\\quant_data\\Ashare\\CODEX_DEV_LOG.md"
+  },
+  "execution_policy": {
+    "account_mode": "precision",
+    "precision_trade_enabled": false,
+    "allow_integrated_precision_execution": false,
+    "namespace": "main",
+    "shadow_run": false
+  },
+  "oms": {
+    "enabled": true,
+    "output_root": "F:\\quant_data\\Ashare\\data\\live_execution_bridge\\oms_v1",
+    "use_broker_truth_for_v2a_continuity": true,
+    "intent_expiry_days": 3,
+    "control_feedback_lookback_runs": 20,
+    "research_meta_lookback_runs": 60,
+    "compat_write_latest_account_state": true,
+    "enable_broker_cancel": true
+  }
+}

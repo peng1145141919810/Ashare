@@ -24,10 +24,13 @@ def execution_policy(config: Dict[str, Any]) -> Dict[str, Any]:
     mode = str(raw.get("account_mode", "simulation") or "simulation").strip().lower()
     if mode not in VALID_ACCOUNT_MODES:
         mode = "simulation"
+    namespace = str(raw.get("namespace", "main") or "main").strip() or "main"
     return {
         "account_mode": mode,
         "precision_trade_enabled": bool(raw.get("precision_trade_enabled", False)),
         "allow_integrated_precision_execution": bool(raw.get("allow_integrated_precision_execution", False)),
+        "namespace": namespace,
+        "shadow_run": bool(raw.get("shadow_run", False)),
     }
 
 
@@ -57,11 +60,19 @@ def build_execution_runtime_config(
     payload["portfolio_root"] = portfolio_root
     payload["explicit_portfolio_path"] = str(Path(explicit_portfolio_path).resolve()) if str(explicit_portfolio_path).strip() else str(Path(portfolio_root) / "target_positions.csv")
     payload["price_snapshot_path"] = str(config.get("market_pipeline", {}).get("price_snapshot_path", payload.get("price_snapshot_path", "")))
-    payload["output_dir"] = str(config["paths"].get("live_execution_root", payload.get("output_dir", "")))
+    namespace = str(policy.get("namespace", "main") or "main").strip() or "main"
+    live_execution_root = Path(str(config["paths"].get("live_execution_root", payload.get("output_dir", "")))).resolve()
+    payload["output_dir"] = str(live_execution_root if namespace == "main" else live_execution_root / namespace)
     control_cfg = dict(config.get("portfolio_control", {}) or {})
+    if namespace != "main":
+        control_cfg["enable_dev_log_snapshot"] = False
     control_cfg.setdefault("codex_dev_log_path", str(Path(__file__).resolve().parents[3] / "CODEX_DEV_LOG.md"))
     payload["portfolio_control"] = control_cfg
-    payload["oms"] = dict(config.get("oms", {}) or {})
+    oms_cfg = dict(config.get("oms", {}) or {})
+    if namespace != "main":
+        base_oms_root = Path(str(oms_cfg.get("output_root", config.get("paths", {}).get("oms_output_root", live_execution_root / "oms_v1")))).resolve()
+        oms_cfg["output_root"] = str(base_oms_root / namespace)
+    payload["oms"] = oms_cfg
     if release_context:
         payload["release"] = release_context
     payload = _apply_account_profile(payload=payload, policy=policy)
